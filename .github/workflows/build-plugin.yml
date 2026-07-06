@@ -58,6 +58,7 @@ jobs:
       artefacts_subdir: ${{ steps.m.outputs.artefacts_subdir }}
       disable_moonbase_flag: ${{ steps.m.outputs.disable_moonbase_flag }}
       config_secret: ${{ steps.m.outputs.config_secret }}
+      has_tests: ${{ steps.m.outputs.has_tests }}
       windows_targets: ${{ steps.m.outputs.windows_targets }}
       macos_targets: ${{ steps.m.outputs.macos_targets }}
       linux_targets: ${{ steps.m.outputs.linux_targets }}
@@ -131,6 +132,7 @@ jobs:
         working-directory: ${{ needs.manifest.outputs.repo_name }}
         run: cmake --build "${{ needs.manifest.outputs.build_dir }}" --config ${{ env.BUILD_TYPE }} --target ${{ needs.manifest.outputs.linux_targets }}
       - name: Test
+        if: needs.manifest.outputs.has_tests == 'true'
         working-directory: ${{ needs.manifest.outputs.repo_name }}
         run: ctest --test-dir "${{ needs.manifest.outputs.build_dir }}" --output-on-failure -C ${{ env.BUILD_TYPE }} -E "Benchmarks"
       - name: Read version
@@ -209,6 +211,7 @@ jobs:
         working-directory: ${{ needs.manifest.outputs.repo_name }}
         run: cmake --build "${{ needs.manifest.outputs.build_dir }}" --config ${{ env.BUILD_TYPE }} --parallel 4 --target ${{ needs.manifest.outputs.windows_targets }}
       - name: Test
+        if: needs.manifest.outputs.has_tests == 'true'
         working-directory: ${{ needs.manifest.outputs.repo_name }}
         run: ctest --test-dir "${{ needs.manifest.outputs.build_dir }}" --output-on-failure -C ${{ env.BUILD_TYPE }} -E "Benchmarks"
       - name: Collect artifacts
@@ -328,6 +331,7 @@ jobs:
         working-directory: ${{ needs.manifest.outputs.repo_name }}
         run: cmake --build "${{ needs.manifest.outputs.build_dir }}" --config ${{ env.BUILD_TYPE }} --target ${{ needs.manifest.outputs.macos_targets }}
       - name: Test
+        if: needs.manifest.outputs.has_tests == 'true'
         working-directory: ${{ needs.manifest.outputs.repo_name }}
         run: ctest --test-dir "${{ needs.manifest.outputs.build_dir }}" --output-on-failure -C ${{ env.BUILD_TYPE }} -E "Benchmarks"
       - name: Collect artifacts

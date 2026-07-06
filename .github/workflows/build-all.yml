@@ -55,9 +55,17 @@ jobs:
       PLUGIN_CONFIG_B64: ${{ secrets.CONFIG_JSON_B64 }}
       MACOS_INSTALLER_SIGN_IDENTITY: ${{ secrets.MACOS_INSTALLER_SIGN_IDENTITY }}
 
+  # Free / no-Moonbase plugin — no PLUGIN_CONFIG_B64 secret to pass.
+  fuzzboy:
+    uses: ./.github/workflows/build-plugin.yml
+    with: { plugin: fuzzboy }
+    secrets:
+      PAT: ${{ secrets.PAT }}
+      MACOS_INSTALLER_SIGN_IDENTITY: ${{ secrets.MACOS_INSTALLER_SIGN_IDENTITY }}
+
   # ---- aggregate: release binaries, build catalog + site, deploy Pages ------
   publish:
-    needs: [polygraph, churn, chasm]
+    needs: [polygraph, churn, chasm, fuzzboy]
     # Publish whatever succeeded; a single failing plugin should not sink the
     # rest of the catalog.
     if: ${{ always() }}

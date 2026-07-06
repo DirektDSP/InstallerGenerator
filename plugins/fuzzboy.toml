@@ -1,0 +1,42 @@
+schema_version = "1"
+
+[repo]
+name = "Fuzzboy"
+ref  = ""
+
+[identity]
+product_name = "Fuzzboy"
+company_name = "DirektDSP"
+bundle_id    = "com.direktdsp.fuzzboy"
+description  = "guitar-pedal fuzz / distortion — Crunch, Potato, Hiss, and Sour modes"
+tagline      = "Fuzzboy — fuzz / distortion pedal in a plugin."
+trial_days   = 0            # free, no licensing
+website      = "https://direktdsp.com"
+
+[formats]
+windows = ["VST3", "CLAP", "Standalone"]
+macos   = ["VST3", "AU", "CLAP", "Standalone"]
+linux   = ["VST3", "CLAP", "Standalone"]
+
+[build]
+system                = "cmake"
+# Migrated from legacy Projucer to self-contained CMake + JUCE 8 (FetchContent).
+# No sibling PluginTemplate, no Moonbase — free plugin.
+build_dir             = "build"
+artefacts_subdir      = "Fuzzboy_artefacts"
+needs_plugin_template = false
+disable_moonbase_flag = ""
+config_secret         = ""
+has_tests             = false      # no Tests target / ctest (legacy plugin, no test suite yet)
+
+[build.targets]
+VST3       = "Fuzzboy_VST3"
+CLAP       = "Fuzzboy_CLAP"
+AU         = "Fuzzboy_AU"
+Standalone = "Fuzzboy_Standalone"
+
+[assets]
+icon_ico    = "packaging/icon.ico"
+icon_png    = "packaging/icon.png"
+header_bmp  = "packaging/header.bmp"
+welcome_bmp = "packaging/welcome.bmp"

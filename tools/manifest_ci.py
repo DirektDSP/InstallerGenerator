@@ -31,8 +31,11 @@ def _targets_for(m: dict, os_key: str) -> list[str]:
         t = tmap.get(fmt)
         if t:
             out.append(t)
-    # Tests always build (unit tests gate the release).
-    out.append("Tests")
+    # A Tests target only exists for plugins that carry one (Polygraph/Churn/Chasm
+    # via PluginTemplate). Migrated free plugins (Fuzzboy) have no Tests target, so
+    # gate on [build].has_tests (default true to preserve existing behaviour).
+    if m["build"].get("has_tests", True):
+        out.append("Tests")
     return out
 
 
@@ -53,6 +56,7 @@ def github_output(name: str) -> str:
         "artefacts_subdir": build.get("artefacts_subdir", f"{repo['name']}_artefacts"),
         "disable_moonbase_flag": build.get("disable_moonbase_flag", ""),
         "config_secret": build.get("config_secret", ""),
+        "has_tests": str(build.get("has_tests", True)).lower(),
         "windows_formats": " ".join(m["formats"]["windows"]),
         "macos_formats": " ".join(m["formats"]["macos"]),
         "linux_formats": " ".join(m["formats"]["linux"]),
