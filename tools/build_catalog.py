@@ -87,11 +87,13 @@ def build_plugin_entry(m: dict, artifacts_dir: Path, url_base: str) -> dict | No
     ident = m["identity"]
     company = ident["company_name"]
     product = ident["product_name"]
+    # Distributable filenames use the space-free slug (see manifest.product_slug).
+    slug = mf.product_slug(product)
 
     installers: dict[str, dict] = {}
     resolved_version: str | None = None
     for os_key in ("windows", "macos", "linux"):
-        path = find_installer(artifacts_dir, company, product, os_key)
+        path = find_installer(artifacts_dir, company, slug, os_key)
         if not path:
             continue
         ver = version_from_filename(path.name, product)

@@ -1,0 +1,44 @@
+schema_version = "1"
+
+[repo]
+name = "Hot-Potato"
+ref  = ""
+
+[identity]
+product_name = "Hot Potato"
+company_name = "DirektDSP"
+bundle_id    = "com.direktdsp.hotpotato"
+description  = "roasting-hot boost / distortion with a factory preset library"
+tagline      = "Hot Potato — roasting hot distortion (not edible!)."
+trial_days   = 0            # free, no licensing
+website      = "https://direktdsp.com"
+
+[formats]
+windows = ["VST3", "CLAP", "Standalone"]
+macos   = ["VST3", "AU", "CLAP", "Standalone"]
+linux   = ["VST3", "CLAP", "Standalone"]
+
+# 12 factory .pp presets shipped with the plugin (repo-root presets/).
+[presets]
+source = "presets/*.pp"
+
+[build]
+system                = "cmake"
+build_dir             = "build"
+artefacts_subdir      = "HotPotato_artefacts"   # CMake target/product is "HotPotato" (no space)
+needs_plugin_template = false
+disable_moonbase_flag = ""
+config_secret         = ""
+has_tests             = false
+
+[build.targets]
+VST3       = "HotPotato_VST3"
+CLAP       = "HotPotato_CLAP"
+AU         = "HotPotato_AU"
+Standalone = "HotPotato_Standalone"
+
+[assets]
+icon_ico    = "packaging/icon.ico"
+icon_png    = "packaging/icon.png"
+header_bmp  = "packaging/header.bmp"
+welcome_bmp = "packaging/welcome.bmp"

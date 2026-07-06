@@ -51,6 +51,7 @@ jobs:
       repo_name: ${{ steps.m.outputs.repo_name }}
       ref: ${{ steps.ref.outputs.ref }}
       product_name: ${{ steps.m.outputs.product_name }}
+      product_slug: ${{ steps.m.outputs.product_slug }}
       company_name: ${{ steps.m.outputs.company_name }}
       bundle_id: ${{ steps.m.outputs.bundle_id }}
       needs_plugin_template: ${{ steps.m.outputs.needs_plugin_template }}
@@ -154,7 +155,7 @@ jobs:
       - name: Package Linux zip
         run: |
           cd _artifacts/linux
-          zip -qr "../${{ needs.manifest.outputs.product_name }}-${{ steps.version.outputs.version }}-Linux.zip" .
+          zip -qr "../${{ needs.manifest.outputs.product_slug }}-${{ steps.version.outputs.version }}-Linux.zip" .
           cd ..
           for f in *-Linux.zip; do sha256sum "$f" > "$f.sha256"; done
       - uses: actions/upload-artifact@v4
@@ -361,6 +362,7 @@ jobs:
           ARTIFACTS_DIR: ${{ github.workspace }}/_artifacts/macos
           OUTDIR: ${{ github.workspace }}/_artifacts
           PRODUCT_NAME: ${{ needs.manifest.outputs.product_name }}
+          PRODUCT_SLUG: ${{ needs.manifest.outputs.product_slug }}
           BUNDLE_ID: ${{ needs.manifest.outputs.bundle_id }}
           COMPANY_NAME: ${{ needs.manifest.outputs.company_name }}
           MACOS_INSTALLER_SIGN_IDENTITY: ${{ secrets.MACOS_INSTALLER_SIGN_IDENTITY }}

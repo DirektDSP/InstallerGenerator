@@ -49,6 +49,7 @@ def github_output(name: str) -> str:
         "repo_name": repo["name"],
         "ref": repo.get("ref", ""),
         "product_name": ident["product_name"],
+        "product_slug": mf.product_slug(ident["product_name"]),
         "company_name": ident["company_name"],
         "bundle_id": ident["bundle_id"],
         "needs_plugin_template": str(build.get("needs_plugin_template", False)).lower(),

@@ -13,6 +13,9 @@ OUTDIR="${OUTDIR:?set OUTDIR}"
 PRODUCT_NAME="${PRODUCT_NAME:?set PRODUCT_NAME}"
 BUNDLE_ID="${BUNDLE_ID:?set BUNDLE_ID}"
 COMPANY_NAME="${COMPANY_NAME:-DirektDSP}"
+# Filename-safe product name for the final .pkg (spaces -> none). Internal
+# sub-package names still use PRODUCT_NAME. Defaults to PRODUCT_NAME when unset.
+PRODUCT_SLUG="${PRODUCT_SLUG:-${PRODUCT_NAME// /}}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKDIR="$(mktemp -d)"
@@ -114,6 +117,19 @@ if [[ ${#apps[@]} -ge 1 ]]; then
   add_choice standalone "${PRODUCT_NAME} Standalone" "Standalone application in /Applications." "${BUNDLE_ID}.app" "${PRODUCT_NAME}.app.pkg"
 fi
 
+# Factory presets — staged by render_installer.py into packaging/presets/ (a
+# sibling of this script's dir). Installed to the shared Documents location so
+# every user sees them: /Users/Shared/<Company>/<Product>/Presets.
+PRESETS_SRC="$SCRIPT_DIR/../presets"
+if [[ -d "$PRESETS_SRC" ]] && compgen -G "$PRESETS_SRC/*" > /dev/null; then
+  proot="$WORKDIR/root_presets"
+  mkdir -p "$proot/Users/Shared/${COMPANY_NAME}/${PRODUCT_NAME}/Presets"
+  cp -R "$PRESETS_SRC"/* "$proot/Users/Shared/${COMPANY_NAME}/${PRODUCT_NAME}/Presets/"
+  pkgbuild --root "$proot" --identifier "${BUNDLE_ID}.presets" --version "$VERSION" \
+    --install-location / "$PKGS/${PRODUCT_NAME}.presets.pkg"
+  add_choice presets "${PRODUCT_NAME} Factory Presets" "Factory preset library (all users)." "${BUNDLE_ID}.presets" "${PRODUCT_NAME}.presets.pkg"
+fi
+
 DIST_OUT="$WORKDIR/Distribution.xml"
 cat > "$DIST_OUT" <<EOF
 <?xml version="1.0" encoding="utf-8"?>
@@ -133,7 +149,7 @@ ${OUTLINE}    </choices-outline>
 ${CHOICES}${REFS}</installer-gui-script>
 EOF
 
-OUT_PKG="$OUTDIR/${COMPANY_NAME}-${PRODUCT_NAME}-${VERSION}-macOS.pkg"
+OUT_PKG="$OUTDIR/${COMPANY_NAME}-${PRODUCT_SLUG}-${VERSION}-macOS.pkg"
 # Do not use "${SIGN_ARGS[@]}" when empty: set -u + bash 4.4+ treats it as unbound.
 if [[ -n "${MACOS_INSTALLER_SIGN_IDENTITY:-}" ]]; then
   productbuild --sign "$MACOS_INSTALLER_SIGN_IDENTITY" \

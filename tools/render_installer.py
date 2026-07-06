@@ -79,8 +79,12 @@ def _substitute(text: str, tokens: dict[str, str]) -> str:
 
 def render_nsi(m: dict) -> str:
     src = (TEMPLATES / "installer.nsi.in").read_text()
-    win_formats = set(m["formats"]["windows"])
-    text = _resolve_conditionals(src, win_formats)
+    # Conditional-section keys = the Windows formats, plus PRESETS if the manifest
+    # declares a [presets] table (its files are staged into packaging/presets/).
+    enabled = set(m["formats"]["windows"])
+    if m.get("presets", {}).get("source"):
+        enabled.add("PRESETS")
+    text = _resolve_conditionals(src, enabled)
     text = _substitute(text, mf.nsis_tokens(m))
     leftover = sorted(set(TOKEN_RE.findall(text)))
     if leftover:
@@ -111,6 +115,21 @@ def write_tree(m: dict, plugin_dir: Path) -> list[Path]:
     shutil.copyfile(TEMPLATES / "macos" / "build_pkg.sh", bpkg)
     bpkg.chmod(0o755)
     written.append(bpkg)
+
+    # Stage factory presets (if declared) into packaging/presets/ so both the NSIS
+    # SecPresets section and build_pkg.sh (which globs packaging/presets) find them.
+    presets = m.get("presets", {})
+    src_glob = presets.get("source")
+    if src_glob:
+        dest_dir = pkg / "presets"
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        matches = sorted(plugin_dir.glob(src_glob))
+        for src in matches:
+            if src.is_file():
+                shutil.copyfile(src, dest_dir / src.name)
+                written.append(dest_dir / src.name)
+        if not matches:
+            print(f"  warn: preset glob matched nothing: {src_glob}", file=sys.stderr)
 
     # Warn (don't fail) on missing brand bitmaps — CI handles icon.ico synthesis
     # and placeholder fallback; a render should still succeed for --check runs.

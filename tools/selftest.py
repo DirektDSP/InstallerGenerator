@@ -64,8 +64,23 @@ def main() -> int:
         try:
             nsi = ri.render_nsi(m)  # raises if any @TOKEN@ survives
             check(_tokens(nsi) == "", f"{n} renders clean (no @TOKEN@)")
+            # Presets section present iff the manifest declares [presets].source.
+            has_presets = bool(m.get("presets", {}).get("source"))
+            has_section = "SecPresets" in nsi
+            check(has_presets == has_section,
+                  f"{n} preset section {'present' if has_presets else 'absent'} as expected")
         except Exception as e:  # noqa: BLE001
             check(False, f"{n} renders: {e}")
+
+    print("\n[2b] synthetic PRESETS conditional")
+    try:
+        pm = dict(manifests[names[0]])
+        pm["presets"] = {"source": "assets/presets/*.pp"}
+        nsi = ri.render_nsi(pm)
+        check("SecPresets" in nsi and "$COMMONDOCUMENTS" in nsi,
+              "PRESETS conditional emits SecPresets + COMMONDOCUMENTS path")
+    except Exception as e:  # noqa: BLE001
+        check(False, f"synthetic presets render: {e}")
 
     print("\n[3] Polygraph NSIS parity vs upstream")
     upstream = REPO.parent / "Polygraph" / "packaging" / "installer.nsi"
@@ -98,9 +113,11 @@ def main() -> int:
         art.mkdir()
         for m in manifests.values():
             comp = m["identity"]["company_name"]
-            prod = m["identity"]["product_name"]
-            (art / f"{comp}-{prod}-9.9.9-Windows.exe").write_bytes(b"x")
-            (art / f"{comp}-{prod}-9.9.9-macOS.pkg").write_bytes(b"y")
+            # Distributable filenames use the space-free slug (matches the
+            # installers the workflow actually produces).
+            slug = mf.product_slug(m["identity"]["product_name"])
+            (art / f"{comp}-{slug}-9.9.9-Windows.exe").write_bytes(b"x")
+            (art / f"{comp}-{slug}-9.9.9-macOS.pkg").write_bytes(b"y")
         catalog = bc.build_catalog(
             list(manifests.keys()), art,
             "https://example.com/{repo}/{version}/{filename}",

@@ -68,12 +68,20 @@ def website_label(website: str) -> str:
     return website.split("://", 1)[-1].rstrip("/")
 
 
+def product_slug(product_name: str) -> str:
+    """Filename-safe product name (spaces removed). Used only for distributable
+    artifact filenames — GitHub Releases rewrite spaces to dots, which would
+    break catalog URL matching. Display/paths keep the real (spaced) name."""
+    return product_name.replace(" ", "")
+
+
 def nsis_tokens(m: dict) -> dict[str, str]:
     """The @TOKEN@ -> value map for installer.nsi.in."""
     ident = m["identity"]
     return {
         "PRODUCT_NAME": ident["product_name"],
         "PRODUCT_NAME_LOWER": ident["product_name"].lower(),
+        "PRODUCT_SLUG": product_slug(ident["product_name"]),
         "COMPANY_NAME": ident["company_name"],
         "DESCRIPTION": ident["description"],
         "WEBSITE": ident["website"],

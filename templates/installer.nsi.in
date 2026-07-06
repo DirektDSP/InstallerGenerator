@@ -17,7 +17,9 @@ Name "@COMPANY_NAME@ @PRODUCT_NAME@ ${VERSION}"
 !ifndef OUTDIR
   !define OUTDIR "..\artifacts"
 !endif
-OutFile "${OUTDIR}\@COMPANY_NAME@-@PRODUCT_NAME@-${VERSION}-Windows.exe"
+; @PRODUCT_SLUG@ (spaces stripped) for the distributable filename; GitHub Releases
+; rewrite spaces to dots, which would break catalog URL matching.
+OutFile "${OUTDIR}\@COMPANY_NAME@-@PRODUCT_SLUG@-${VERSION}-Windows.exe"
 InstallDir "$PROGRAMFILES64\@COMPANY_NAME@\@PRODUCT_NAME@"
 ; Restore previous install directory if the user has run this installer before.
 InstallDirRegKey HKLM "Software\@COMPANY_NAME@\@PRODUCT_NAME@" "InstallDir"
@@ -120,6 +122,19 @@ SectionEnd
 ;@ENDIF
 
 ;----------------------------------------------------------------------
+; Factory Presets (optional, checked by default)
+;----------------------------------------------------------------------
+
+; Preset files are staged into packaging/presets/ by render_installer.py from
+; the manifest [presets].source glob, so ${__FILEDIR__}\presets is script-relative.
+;@IF PRESETS
+Section "@PRODUCT_NAME@ Factory Presets" SecPresets
+  SetOutPath "$COMMONDOCUMENTS\@COMPANY_NAME@\@PRODUCT_NAME@\Presets"
+  File /r "${__FILEDIR__}\presets\*"
+SectionEnd
+;@ENDIF
+
+;----------------------------------------------------------------------
 ; User Manual (optional, checked by default)
 ;----------------------------------------------------------------------
 
@@ -164,6 +179,9 @@ SectionEnd
 ;@IF Standalone
   !insertmacro MUI_DESCRIPTION_TEXT ${SecStandalone} "@PRODUCT_NAME@ standalone application."
 ;@ENDIF
+;@IF PRESETS
+  !insertmacro MUI_DESCRIPTION_TEXT ${SecPresets} "@PRODUCT_NAME@ factory preset library."
+;@ENDIF
   !insertmacro MUI_DESCRIPTION_TEXT ${SecManual} "@PRODUCT_NAME@ user manual (PDF)."
 !insertmacro MUI_FUNCTION_DESCRIPTION_END
 
@@ -180,6 +198,13 @@ Section "Uninstall"
   ; CLAP
   Delete "$COMMONFILES64\CLAP\@COMPANY_NAME@\@PRODUCT_NAME@.clap"
   RMDir "$COMMONFILES64\CLAP\@COMPANY_NAME@"
+;@ENDIF
+
+;@IF PRESETS
+  ; Factory presets
+  RMDir /r "$COMMONDOCUMENTS\@COMPANY_NAME@\@PRODUCT_NAME@\Presets"
+  RMDir "$COMMONDOCUMENTS\@COMPANY_NAME@\@PRODUCT_NAME@"
+  RMDir "$COMMONDOCUMENTS\@COMPANY_NAME@"
 ;@ENDIF
 
   ; Standalone + manual + uninstaller
