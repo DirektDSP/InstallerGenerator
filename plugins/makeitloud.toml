@@ -1,0 +1,42 @@
+schema_version = "1"
+
+[repo]
+name = "MakeItLoud"
+ref  = ""
+
+[identity]
+product_name = "MakeItLoud"
+company_name = "DirektDSP"
+bundle_id    = "com.direktdsp.makeitloud"
+description  = "compression + distortion loudness effect (drum / synth / vocal / custom modes)"
+tagline      = "MakeItLoud — super-simple compression and distortion to make things loud."
+trial_days   = 0            # free, no licensing
+website      = "https://direktdsp.com"
+
+[formats]
+windows = ["VST3", "CLAP", "Standalone"]
+macos   = ["VST3", "AU", "CLAP", "Standalone"]
+linux   = ["VST3", "CLAP", "Standalone"]
+
+[build]
+system                = "cmake"
+# Migrated from legacy Projucer (nested MakeItLoud/MakeItLoud/) to self-contained
+# CMake + JUCE 8, flattened to repo root. Free — no PluginTemplate/Moonbase.
+build_dir             = "build"
+artefacts_subdir      = "MakeItLoud_artefacts"
+needs_plugin_template = false
+disable_moonbase_flag = ""
+config_secret         = ""
+has_tests             = false
+
+[build.targets]
+VST3       = "MakeItLoud_VST3"
+CLAP       = "MakeItLoud_CLAP"
+AU         = "MakeItLoud_AU"
+Standalone = "MakeItLoud_Standalone"
+
+[assets]
+icon_ico    = "packaging/icon.ico"
+icon_png    = "packaging/icon.png"
+header_bmp  = "packaging/header.bmp"
+welcome_bmp = "packaging/welcome.bmp"

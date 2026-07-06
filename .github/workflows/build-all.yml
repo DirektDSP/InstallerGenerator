@@ -70,9 +70,16 @@ jobs:
       PAT: ${{ secrets.PAT }}
       MACOS_INSTALLER_SIGN_IDENTITY: ${{ secrets.MACOS_INSTALLER_SIGN_IDENTITY }}
 
+  makeitloud:
+    uses: ./.github/workflows/build-plugin.yml
+    with: { plugin: makeitloud }
+    secrets:
+      PAT: ${{ secrets.PAT }}
+      MACOS_INSTALLER_SIGN_IDENTITY: ${{ secrets.MACOS_INSTALLER_SIGN_IDENTITY }}
+
   # ---- aggregate: release binaries, build catalog + site, deploy Pages ------
   publish:
-    needs: [polygraph, churn, chasm, fuzzboy, hot-potato]
+    needs: [polygraph, churn, chasm, fuzzboy, hot-potato, makeitloud]
     # Publish whatever succeeded; a single failing plugin should not sink the
     # rest of the catalog.
     if: ${{ always() }}
