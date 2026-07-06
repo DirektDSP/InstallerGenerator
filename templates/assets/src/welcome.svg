@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 164 314" width="164" height="314">
+  <title>DirektDSP installer welcome panel</title>
+  <!-- MUI welcome/finish side panel: ink background, centered house badge and
+       wordmark. Neutral to any specific plugin. -->
+  <rect width="164" height="314" fill="#1B1813"/>
+  <g transform="translate(40,70)">
+    <rect x="2.25" y="2.25" width="91.5" height="91.5" rx="8"
+          fill="#F4EFE2" stroke="#1B1813" stroke-width="4.5"/>
+    <g fill="#C8392B">
+      <rect x="20" y="46" width="7" height="18" rx="1.5"/>
+      <rect x="31" y="38" width="7" height="34" rx="1.5"/>
+      <rect x="42" y="24" width="7" height="48" rx="1.5"/>
+      <rect x="53" y="38" width="7" height="34" rx="1.5"/>
+      <rect x="64" y="46" width="7" height="18" rx="1.5"/>
+    </g>
+  </g>
+  <text x="82" y="210" text-anchor="middle"
+        font-family="DejaVu Sans, Helvetica, Arial, sans-serif"
+        font-size="20" font-weight="700" fill="#F4EFE2">DirektDSP</text>
+  <text x="82" y="232" text-anchor="middle"
+        font-family="DejaVu Sans, Helvetica, Arial, sans-serif"
+        font-size="10" fill="#C8392B">audio plugins</text>
+</svg>

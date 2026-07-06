@@ -233,21 +233,18 @@ jobs:
       - name: Ensure NSIS brand assets
         shell: pwsh
         run: |
-          $pkg = "${{ needs.manifest.outputs.repo_name }}/packaging"
-          # Plugins that used another installer tech (e.g. Chasm/Inno) ship only
-          # icon.png. Synthesize a .ico from it; fall back to NEUTRAL (brand-free)
-          # placeholder BMPs from the generator — never another plugin's art.
-          if ((-not (Test-Path "$pkg/icon.ico")) -and (Test-Path "$pkg/icon.png")) {
+          $pkg   = "${{ needs.manifest.outputs.repo_name }}/packaging"
+          $house = "_generator/templates/assets"
+          # Fall back to the generic DirektDSP house assets (icon/header/welcome)
+          # for anything the plugin doesn't ship its own art for. These are real
+          # company-branded assets — never another plugin's art.
+          if (-not (Test-Path "$pkg/icon.png"))    { Copy-Item "$house/icon.png"    "$pkg/icon.png" }
+          if (-not (Test-Path "$pkg/header.bmp"))  { Copy-Item "$house/header.bmp"  "$pkg/header.bmp" }
+          if (-not (Test-Path "$pkg/welcome.bmp")) { Copy-Item "$house/welcome.bmp" "$pkg/welcome.bmp" }
+          # Windows installer icon: derive .ico from whichever icon.png is in place.
+          if (-not (Test-Path "$pkg/icon.ico")) {
             choco install imagemagick.tool --yes --no-progress
             magick "$pkg/icon.png" -define icon:auto-resize=256,64,48,32,16 "$pkg/icon.ico"
-          }
-          foreach ($bmp in @("header","welcome")) {
-            if (-not (Test-Path "$pkg/$bmp.bmp")) {
-              python3 _generator/tools/gen_placeholder_assets.py "$pkg" --only $bmp
-            }
-          }
-          if (-not (Test-Path "$pkg/icon.ico")) {
-            Write-Error "No icon.ico and no icon.png to synthesize one from in $pkg"; exit 1
           }
       - name: Read version
         id: version

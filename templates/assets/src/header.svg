@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 150 57" width="150" height="57">
+  <title>DirektDSP installer header</title>
+  <!-- MUI header strip: paper background, house badge at right (MUI draws it
+       right-aligned), wordmark to the left. -->
+  <rect width="150" height="57" fill="#F4EFE2"/>
+  <text x="12" y="34" font-family="DejaVu Sans, Helvetica, Arial, sans-serif"
+        font-size="15" font-weight="700" fill="#1B1813">DirektDSP</text>
+  <g transform="translate(112,10) scale(0.36)">
+    <rect x="2.25" y="2.25" width="91.5" height="91.5" rx="8"
+          fill="#F4EFE2" stroke="#1B1813" stroke-width="4.5"/>
+    <g fill="#C8392B">
+      <rect x="20" y="46" width="7" height="18" rx="1.5"/>
+      <rect x="31" y="38" width="7" height="34" rx="1.5"/>
+      <rect x="42" y="24" width="7" height="48" rx="1.5"/>
+      <rect x="53" y="38" width="7" height="34" rx="1.5"/>
+      <rect x="64" y="46" width="7" height="18" rx="1.5"/>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="512" height="512">
+  <title>DirektDSP app icon</title>
+  <!-- 512x512 render of the generic house badge, used as the plugin ICON_BIG
+       and the Windows installer icon (CI derives icon.ico from this PNG). -->
+  <rect x="2.25" y="2.25" width="91.5" height="91.5" rx="8"
+        fill="#F4EFE2" stroke="#1B1813" stroke-width="4.5"/>
+  <g fill="#C8392B">
+    <rect x="20" y="46" width="7" height="18" rx="1.5"/>
+    <rect x="31" y="38" width="7" height="34" rx="1.5"/>
+    <rect x="42" y="24" width="7" height="48" rx="1.5"/>
+    <rect x="53" y="38" width="7" height="34" rx="1.5"/>
+    <rect x="64" y="46" width="7" height="18" rx="1.5"/>
+  </g>
+</svg>
