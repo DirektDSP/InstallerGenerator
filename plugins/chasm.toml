@@ -43,7 +43,7 @@ AU   = "Chasm_AU"
 # Chasm ships Inno assets today, not NSIS bitmaps. It has packaging/icon.png and
 # packaging/chasm.icns but no header.bmp/welcome.bmp/icon.ico. The renderer falls
 # back to templates/assets/ placeholders for anything missing, and CI derives
-# icon.ico from icon.png. Migrating Inno -> NSIS is tracked in ARCHITECTURE.md.
+# icon.ico from icon.png.
 icon_ico    = "packaging/icon.ico"
 icon_png    = "packaging/icon.png"
 header_bmp  = "packaging/header.bmp"
