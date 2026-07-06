@@ -1,0 +1,39 @@
+schema_version = "1"
+
+[repo]
+name = "Polygraph"
+ref  = ""                                # default branch; a vX.Y.Z tag overrides at release
+
+[identity]
+product_name = "Polygraph"
+company_name = "DirektDSP"
+bundle_id    = "com.direktdsp.polygraph"
+description  = "real-time polyphonic guitar to MIDI"
+tagline      = "Polygraph — real-time polyphonic guitar to MIDI."
+trial_days   = 7
+website      = "https://direktdsp.com"
+
+[formats]
+windows = ["VST3", "CLAP", "Standalone"]
+macos   = ["VST3", "AU", "CLAP", "Standalone"]
+linux   = ["VST3", "CLAP", "Standalone"]
+
+[build]
+system                = "cmake"
+build_dir             = "build"
+artefacts_subdir      = "Polygraph_artefacts"
+needs_plugin_template = true
+disable_moonbase_flag = "POLYGRAPH_DISABLE_MOONBASE"
+config_secret         = "POLYGRAPH_CONFIG_B64"
+
+[build.targets]
+VST3       = "Polygraph_VST3"
+CLAP       = "Polygraph_CLAP"
+AU         = "Polygraph_AU"
+Standalone = "Polygraph_Standalone"
+
+[assets]
+icon_ico    = "packaging/icon.ico"
+icon_png    = "packaging/icon.png"
+header_bmp  = "packaging/header.bmp"
+welcome_bmp = "packaging/welcome.bmp"

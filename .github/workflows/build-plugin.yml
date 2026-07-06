@@ -1,0 +1,378 @@
+name: Build one plugin
+
+# Central orchestrator: clone a DirektDSP plugin, build every format per-OS,
+# render the unified installer from templates/, compile it (NSIS on Windows,
+# productbuild .pkg on macOS, zip on Linux), checksum + smoke-test, and upload
+# installer artifacts. build-all.yml calls this once per plugin and then
+# publishes the aggregate catalog + download site.
+#
+# Invoked via workflow_call (from build-all.yml) or manually (workflow_dispatch)
+# to (re)build a single plugin.
+
+on:
+  workflow_call:
+    inputs:
+      plugin:
+        description: manifest slug (e.g. polygraph)
+        required: true
+        type: string
+      ref:
+        description: override plugin git ref (tag/branch/sha); blank = manifest/default
+        required: false
+        type: string
+        default: ""
+    secrets:
+      PAT: { required: true }
+      PLUGIN_CONFIG_B64: { required: false }
+      MACOS_INSTALLER_SIGN_IDENTITY: { required: false }
+  workflow_dispatch:
+    inputs:
+      plugin:
+        description: manifest slug (e.g. polygraph)
+        required: true
+        type: string
+      ref:
+        description: override plugin git ref
+        required: false
+        type: string
+        default: ""
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  # --------------------------------------------------------------------------
+  # Read the manifest once; every downstream job consumes these outputs.
+  # --------------------------------------------------------------------------
+  manifest:
+    runs-on: ubuntu-latest
+    outputs:
+      slug: ${{ steps.m.outputs.slug }}
+      repo_name: ${{ steps.m.outputs.repo_name }}
+      ref: ${{ steps.ref.outputs.ref }}
+      product_name: ${{ steps.m.outputs.product_name }}
+      company_name: ${{ steps.m.outputs.company_name }}
+      bundle_id: ${{ steps.m.outputs.bundle_id }}
+      needs_plugin_template: ${{ steps.m.outputs.needs_plugin_template }}
+      build_dir: ${{ steps.m.outputs.build_dir }}
+      artefacts_subdir: ${{ steps.m.outputs.artefacts_subdir }}
+      disable_moonbase_flag: ${{ steps.m.outputs.disable_moonbase_flag }}
+      config_secret: ${{ steps.m.outputs.config_secret }}
+      windows_targets: ${{ steps.m.outputs.windows_targets }}
+      macos_targets: ${{ steps.m.outputs.macos_targets }}
+      linux_targets: ${{ steps.m.outputs.linux_targets }}
+    steps:
+      - name: Checkout generator
+        uses: actions/checkout@v4
+      - name: Read manifest
+        id: m
+        run: python3 tools/manifest_ci.py github-output "${{ inputs.plugin }}" >> "$GITHUB_OUTPUT"
+      - name: Resolve plugin ref
+        id: ref
+        run: |
+          REF="${{ inputs.ref }}"
+          [ -z "$REF" ] && REF="${{ steps.m.outputs.ref }}"
+          echo "ref=$REF" >> "$GITHUB_OUTPUT"
+
+  # --------------------------------------------------------------------------
+  # Linux build (always). Produces VST3/CLAP/Standalone bundles + runs tests.
+  # --------------------------------------------------------------------------
+  build-linux:
+    needs: manifest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: _generator }
+      - name: Clone plugin
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ needs.manifest.outputs.company_name }}/${{ needs.manifest.outputs.repo_name }}
+          ref: ${{ needs.manifest.outputs.ref }}
+          path: ${{ needs.manifest.outputs.repo_name }}
+          submodules: recursive
+          token: ${{ secrets.PAT }}
+      - name: Clone PluginTemplate (sibling, if required)
+        if: needs.manifest.outputs.needs_plugin_template == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ needs.manifest.outputs.company_name }}/PluginTemplate
+          path: PluginTemplate
+          submodules: recursive
+          token: ${{ secrets.PAT }}
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential cmake ninja-build jq \
+            libasound2-dev libjack-jackd2-dev \
+            libfreetype-dev libx11-dev libxcomposite-dev \
+            libxcursor-dev libxext-dev libxfixes-dev \
+            libxinerama-dev libxrandr-dev libxrender-dev \
+            libwebkit2gtk-4.1-dev libcurl4-openssl-dev \
+            ladspa-sdk libgl1-mesa-dev
+      - name: Recreate moonbase config
+        # secrets.* is NOT available in step-level if:, so gate inside the script
+        # on the env var (env CAN read secrets). A blank secret is a no-op.
+        env:
+          PLUGIN_CONFIG_B64: ${{ secrets.PLUGIN_CONFIG_B64 }}
+        working-directory: ${{ needs.manifest.outputs.repo_name }}
+        run: |
+          if [ -n "$PLUGIN_CONFIG_B64" ]; then
+            mkdir -p assets
+            echo "$PLUGIN_CONFIG_B64" | base64 --decode > assets/moonbase_api_config.json
+            echo "moonbase config written"
+          else
+            echo "no PLUGIN_CONFIG_B64 secret — skipping (Moonbase disabled build)"
+          fi
+      - name: Configure
+        working-directory: ${{ needs.manifest.outputs.repo_name }}
+        run: cmake -B "${{ needs.manifest.outputs.build_dir }}" -G Ninja -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+      - name: Build
+        working-directory: ${{ needs.manifest.outputs.repo_name }}
+        run: cmake --build "${{ needs.manifest.outputs.build_dir }}" --config ${{ env.BUILD_TYPE }} --target ${{ needs.manifest.outputs.linux_targets }}
+      - name: Test
+        working-directory: ${{ needs.manifest.outputs.repo_name }}
+        run: ctest --test-dir "${{ needs.manifest.outputs.build_dir }}" --output-on-failure -C ${{ env.BUILD_TYPE }} -E "Benchmarks"
+      - name: Read version
+        id: version
+        working-directory: ${{ needs.manifest.outputs.repo_name }}
+        run: |
+          if [[ "${{ needs.manifest.outputs.ref }}" == v* ]]; then V="${{ needs.manifest.outputs.ref }}"; V="${V#v}";
+          elif [ -f VERSION ]; then V="$(cat VERSION)"; else V="0.0.0"; fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+      - name: Collect artifacts
+        working-directory: ${{ needs.manifest.outputs.repo_name }}
+        run: |
+          mkdir -p ../_artifacts/linux
+          base="${{ needs.manifest.outputs.build_dir }}/${{ needs.manifest.outputs.artefacts_subdir }}/${{ env.BUILD_TYPE }}"
+          [ -d "$base/VST3" ] && cp -r "$base/VST3/"*.vst3 ../_artifacts/linux/ || true
+          [ -d "$base/CLAP" ] && cp -r "$base/CLAP/"*.clap ../_artifacts/linux/ || true
+          [ -d "$base/Standalone" ] && cp -r "$base/Standalone/"* ../_artifacts/linux/ || true
+          ls -laR ../_artifacts/linux/
+      - name: Package Linux zip
+        run: |
+          cd _artifacts/linux
+          zip -qr "../${{ needs.manifest.outputs.product_name }}-${{ steps.version.outputs.version }}-Linux.zip" .
+          cd ..
+          for f in *-Linux.zip; do sha256sum "$f" > "$f.sha256"; done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ needs.manifest.outputs.slug }}-linux
+          path: |
+            _artifacts/*-Linux.zip
+            _artifacts/*-Linux.zip.sha256
+          retention-days: 7
+
+  # --------------------------------------------------------------------------
+  # Windows build + NSIS installer.
+  # --------------------------------------------------------------------------
+  build-windows:
+    needs: manifest
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: _generator }
+      - name: Clone plugin
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ needs.manifest.outputs.company_name }}/${{ needs.manifest.outputs.repo_name }}
+          ref: ${{ needs.manifest.outputs.ref }}
+          path: ${{ needs.manifest.outputs.repo_name }}
+          submodules: recursive
+          token: ${{ secrets.PAT }}
+      - name: Clone PluginTemplate (sibling, if required)
+        if: needs.manifest.outputs.needs_plugin_template == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ needs.manifest.outputs.company_name }}/PluginTemplate
+          path: PluginTemplate
+          submodules: recursive
+          token: ${{ secrets.PAT }}
+      - name: Recreate moonbase config
+        # secrets.* is NOT available in step-level if:, so gate inside the script.
+        shell: bash
+        env:
+          PLUGIN_CONFIG_B64: ${{ secrets.PLUGIN_CONFIG_B64 }}
+        working-directory: ${{ needs.manifest.outputs.repo_name }}
+        run: |
+          if [ -n "$PLUGIN_CONFIG_B64" ]; then
+            mkdir -p assets
+            echo "$PLUGIN_CONFIG_B64" | base64 --decode > assets/moonbase_api_config.json
+            echo "moonbase config written"
+          else
+            echo "no PLUGIN_CONFIG_B64 secret — skipping"
+          fi
+      - name: Configure
+        working-directory: ${{ needs.manifest.outputs.repo_name }}
+        run: cmake -B "${{ needs.manifest.outputs.build_dir }}" -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+      - name: Build
+        working-directory: ${{ needs.manifest.outputs.repo_name }}
+        run: cmake --build "${{ needs.manifest.outputs.build_dir }}" --config ${{ env.BUILD_TYPE }} --parallel 4 --target ${{ needs.manifest.outputs.windows_targets }}
+      - name: Test
+        working-directory: ${{ needs.manifest.outputs.repo_name }}
+        run: ctest --test-dir "${{ needs.manifest.outputs.build_dir }}" --output-on-failure -C ${{ env.BUILD_TYPE }} -E "Benchmarks"
+      - name: Collect artifacts
+        shell: bash
+        working-directory: ${{ needs.manifest.outputs.repo_name }}
+        run: |
+          mkdir -p ../_artifacts/windows
+          base="${{ needs.manifest.outputs.build_dir }}/${{ needs.manifest.outputs.artefacts_subdir }}/${{ env.BUILD_TYPE }}"
+          [ -d "$base/VST3" ] && cp -r "$base/VST3/"*.vst3 ../_artifacts/windows/ || true
+          [ -d "$base/CLAP" ] && cp "$base/CLAP/"*.clap ../_artifacts/windows/ || true
+          [ -d "$base/Standalone" ] && cp "$base/Standalone/"*.exe ../_artifacts/windows/ || true
+          ls -laR ../_artifacts/windows/
+      - name: Render installer from template
+        shell: bash
+        run: |
+          python3 _generator/tools/render_installer.py "${{ needs.manifest.outputs.slug }}" \
+            --plugin-dir "${{ needs.manifest.outputs.repo_name }}"
+      - name: Ensure NSIS brand assets
+        shell: pwsh
+        run: |
+          $pkg = "${{ needs.manifest.outputs.repo_name }}/packaging"
+          # Plugins that used another installer tech (e.g. Chasm/Inno) ship only
+          # icon.png. Synthesize a .ico from it; fall back to NEUTRAL (brand-free)
+          # placeholder BMPs from the generator — never another plugin's art.
+          if ((-not (Test-Path "$pkg/icon.ico")) -and (Test-Path "$pkg/icon.png")) {
+            choco install imagemagick.tool --yes --no-progress
+            magick "$pkg/icon.png" -define icon:auto-resize=256,64,48,32,16 "$pkg/icon.ico"
+          }
+          foreach ($bmp in @("header","welcome")) {
+            if (-not (Test-Path "$pkg/$bmp.bmp")) {
+              python3 _generator/tools/gen_placeholder_assets.py "$pkg" --only $bmp
+            }
+          }
+          if (-not (Test-Path "$pkg/icon.ico")) {
+            Write-Error "No icon.ico and no icon.png to synthesize one from in $pkg"; exit 1
+          }
+      - name: Read version
+        id: version
+        shell: bash
+        working-directory: ${{ needs.manifest.outputs.repo_name }}
+        run: |
+          if [[ "${{ needs.manifest.outputs.ref }}" == v* ]]; then V="${{ needs.manifest.outputs.ref }}"; V="${V#v}";
+          elif [ -f VERSION ]; then V="$(cat VERSION)"; else V="0.0.0"; fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+      - name: Install NSIS
+        run: choco install nsis --yes --no-progress
+      - name: Build NSIS installer
+        uses: joncloud/makensis-action@v4
+        with:
+          script-file: ${{ needs.manifest.outputs.repo_name }}/packaging/installer.nsi
+          arguments: >-
+            /DVERSION=${{ steps.version.outputs.version }}
+            /DARTIFACTS_DIR=${{ github.workspace }}\_artifacts\windows
+            /DOUTDIR=${{ github.workspace }}\_artifacts
+      - name: Smoke test + checksum
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem _artifacts -Filter "*-Windows.exe" | Select-Object -First 1
+          if (-not $exe) { Write-Error "no installer produced"; exit 1 }
+          $p = Start-Process -FilePath $exe.FullName -ArgumentList "/S" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { Write-Error "installer exit $($p.ExitCode)"; exit 1 }
+          $vst3 = Join-Path $env:CommonProgramFiles "VST3\${{ needs.manifest.outputs.company_name }}\${{ needs.manifest.outputs.product_name }}.vst3"
+          if (-not (Test-Path $vst3)) { Write-Error "VST3 not installed at $vst3"; exit 1 }
+          (Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLower() + "  " + $exe.Name | Out-File "$($exe.FullName).sha256" -Encoding ascii
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ needs.manifest.outputs.slug }}-windows
+          path: |
+            _artifacts/*-Windows.exe
+            _artifacts/*-Windows.exe.sha256
+          retention-days: 7
+
+  # --------------------------------------------------------------------------
+  # macOS build (universal) + .pkg installer.
+  # --------------------------------------------------------------------------
+  build-macos:
+    needs: manifest
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: _generator }
+      - name: Clone plugin
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ needs.manifest.outputs.company_name }}/${{ needs.manifest.outputs.repo_name }}
+          ref: ${{ needs.manifest.outputs.ref }}
+          path: ${{ needs.manifest.outputs.repo_name }}
+          submodules: recursive
+          token: ${{ secrets.PAT }}
+      - name: Clone PluginTemplate (sibling, if required)
+        if: needs.manifest.outputs.needs_plugin_template == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ needs.manifest.outputs.company_name }}/PluginTemplate
+          path: PluginTemplate
+          submodules: recursive
+          token: ${{ secrets.PAT }}
+      - name: Install deps
+        run: brew install ninja jq
+      - name: Recreate moonbase config
+        # secrets.* is NOT available in step-level if:, so gate inside the script.
+        env:
+          PLUGIN_CONFIG_B64: ${{ secrets.PLUGIN_CONFIG_B64 }}
+        working-directory: ${{ needs.manifest.outputs.repo_name }}
+        run: |
+          if [ -n "$PLUGIN_CONFIG_B64" ]; then
+            mkdir -p assets
+            echo "$PLUGIN_CONFIG_B64" | base64 --decode > assets/moonbase_api_config.json
+            echo "moonbase config written"
+          else
+            echo "no PLUGIN_CONFIG_B64 secret — skipping"
+          fi
+      - name: Configure
+        working-directory: ${{ needs.manifest.outputs.repo_name }}
+        run: cmake -B "${{ needs.manifest.outputs.build_dir }}" -G Ninja -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"
+      - name: Build
+        working-directory: ${{ needs.manifest.outputs.repo_name }}
+        run: cmake --build "${{ needs.manifest.outputs.build_dir }}" --config ${{ env.BUILD_TYPE }} --target ${{ needs.manifest.outputs.macos_targets }}
+      - name: Test
+        working-directory: ${{ needs.manifest.outputs.repo_name }}
+        run: ctest --test-dir "${{ needs.manifest.outputs.build_dir }}" --output-on-failure -C ${{ env.BUILD_TYPE }} -E "Benchmarks"
+      - name: Collect artifacts
+        working-directory: ${{ needs.manifest.outputs.repo_name }}
+        run: |
+          mkdir -p ../_artifacts/macos
+          base="${{ needs.manifest.outputs.build_dir }}/${{ needs.manifest.outputs.artefacts_subdir }}/${{ env.BUILD_TYPE }}"
+          [ -d "$base/VST3" ] && cp -r "$base/VST3/"*.vst3 ../_artifacts/macos/ || true
+          [ -d "$base/CLAP" ] && cp -R "$base/CLAP/"*.clap ../_artifacts/macos/ || true
+          [ -d "$base/AU" ] && cp -r "$base/AU/"*.component ../_artifacts/macos/ || true
+          [ -d "$base/Standalone" ] && cp -r "$base/Standalone/"*.app ../_artifacts/macos/ || true
+          ls -laR ../_artifacts/macos/
+      - name: Render installer from template
+        run: |
+          python3 _generator/tools/render_installer.py "${{ needs.manifest.outputs.slug }}" \
+            --plugin-dir "${{ needs.manifest.outputs.repo_name }}"
+      - name: Read version
+        id: version
+        working-directory: ${{ needs.manifest.outputs.repo_name }}
+        run: |
+          if [[ "${{ needs.manifest.outputs.ref }}" == v* ]]; then V="${{ needs.manifest.outputs.ref }}"; V="${V#v}";
+          elif [ -f VERSION ]; then V="$(cat VERSION)"; else V="0.0.0"; fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+      - name: Build .pkg
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          ARTIFACTS_DIR: ${{ github.workspace }}/_artifacts/macos
+          OUTDIR: ${{ github.workspace }}/_artifacts
+          PRODUCT_NAME: ${{ needs.manifest.outputs.product_name }}
+          BUNDLE_ID: ${{ needs.manifest.outputs.bundle_id }}
+          COMPANY_NAME: ${{ needs.manifest.outputs.company_name }}
+          MACOS_INSTALLER_SIGN_IDENTITY: ${{ secrets.MACOS_INSTALLER_SIGN_IDENTITY }}
+        run: bash "${{ needs.manifest.outputs.repo_name }}/packaging/macos/build_pkg.sh"
+      - name: Smoke test + checksum
+        run: |
+          set -euo pipefail
+          PKG=$(ls _artifacts/*-macOS.pkg | head -1)
+          [ -n "$PKG" ] || { echo "no pkg produced"; exit 1; }
+          pkgutil --check-signature "$PKG" || echo "::warning::pkg unsigned (expected until certs land)"
+          xar -tf "$PKG" | grep -qi "${{ needs.manifest.outputs.product_name }}.vst3.pkg" || { echo "::error::pkg missing VST3 sub-package"; exit 1; }
+          shasum -a 256 "$PKG" > "$PKG.sha256"; cat "$PKG.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ needs.manifest.outputs.slug }}-macos
+          path: |
+            _artifacts/*-macOS.pkg
+            _artifacts/*-macOS.pkg.sha256
+          retention-days: 7

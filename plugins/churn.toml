@@ -1,0 +1,41 @@
+schema_version = "1"
+
+[repo]
+name = "Churn"
+ref  = ""
+
+[identity]
+product_name = "Churn"
+company_name = "DirektDSP"
+bundle_id    = "com.direktdsp.churn"
+# Was mislabelled "polyphonic guitar-to-MIDI plugin" in the copied NSIS script —
+# fixed here as the single source of truth.
+description  = "real-time interference laboratory — phaser, flanger, comb bank, and phase rotation in one engine"
+tagline      = "Churn — real-time interference laboratory. Phaser, flanger, comb bank, and phase rotation in one engine."
+trial_days   = 14
+website      = "https://direktdsp.com"
+
+[formats]
+windows = ["VST3", "CLAP", "Standalone"]
+macos   = ["VST3", "AU", "CLAP", "Standalone"]
+linux   = ["VST3", "CLAP", "Standalone"]
+
+[build]
+system                = "cmake"
+build_dir             = "build"
+artefacts_subdir      = "Churn_artefacts"
+needs_plugin_template = true
+disable_moonbase_flag = "CHURN_DISABLE_MOONBASE"
+config_secret         = "CHURN_CONFIG_B64"
+
+[build.targets]
+VST3       = "Churn_VST3"
+CLAP       = "Churn_CLAP"
+AU         = "Churn_AU"
+Standalone = "Churn_Standalone"
+
+[assets]
+icon_ico    = "packaging/icon.ico"
+icon_png    = "packaging/icon.png"
+header_bmp  = "packaging/header.bmp"
+welcome_bmp = "packaging/welcome.bmp"

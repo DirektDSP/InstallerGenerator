@@ -1,0 +1,26 @@
+name: Self-test
+
+# Gate changes to the generator itself: every manifest loads + renders with no
+# unsubstituted tokens, the Polygraph NSIS render matches upstream line-for-line,
+# and the catalog builds + validates against the schema. Pure Python, no build.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  selftest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run self-test
+        run: python3 tools/selftest.py
+      - name: Render every manifest (--check)
+        run: |
+          for m in plugins/*.toml; do
+            python3 tools/render_installer.py "$(basename "$m" .toml)" --check
+          done

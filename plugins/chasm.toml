@@ -1,0 +1,50 @@
+schema_version = "1"
+
+[repo]
+name = "Chasm"
+ref  = ""
+
+[identity]
+product_name = "Chasm"
+company_name = "DirektDSP"
+bundle_id    = "com.direktdsp.chasm"
+description  = "diffusion / delay engine — seven effects in one, in collaboration with Korzana"
+tagline      = "Chasm — diffusion / delay engine, in collaboration with Korzana."
+trial_days   = 14
+website      = "https://direktdsp.com"
+
+# Chasm builds no Standalone target (Pamplejuce FORMATS = AU VST3 AUv3 CLAP).
+# AUv3 is not packaged by the desktop installers (macOS App Store path only), so
+# it is intentionally omitted from the format lists below.
+[formats]
+windows = ["VST3", "CLAP"]
+macos   = ["VST3", "AU", "CLAP"]
+linux   = ["VST3", "CLAP"]
+
+[build]
+system                = "cmake"
+# Chasm diverges from Polygraph/Churn: identity lives in CMakeLists.txt (exported
+# via GitHubENV.cmake -> .env), the build dir is "Builds", all modules are in-repo
+# submodules, and there is no sibling PluginTemplate.
+build_dir             = "Builds"
+artefacts_subdir      = "Chasm_artefacts"
+needs_plugin_template = false
+# Chasm has no per-plugin -D disable flag upstream; leave empty (Moonbase always
+# on for release builds — config injected from the secret below).
+disable_moonbase_flag = ""
+config_secret         = "CONFIG_JSON_B64"
+
+[build.targets]
+VST3 = "Chasm_VST3"
+CLAP = "Chasm_CLAP"
+AU   = "Chasm_AU"
+
+[assets]
+# Chasm ships Inno assets today, not NSIS bitmaps. It has packaging/icon.png and
+# packaging/chasm.icns but no header.bmp/welcome.bmp/icon.ico. The renderer falls
+# back to templates/assets/ placeholders for anything missing, and CI derives
+# icon.ico from icon.png. Migrating Inno -> NSIS is tracked in ARCHITECTURE.md.
+icon_ico    = "packaging/icon.ico"
+icon_png    = "packaging/icon.png"
+header_bmp  = "packaging/header.bmp"
+welcome_bmp = "packaging/welcome.bmp"

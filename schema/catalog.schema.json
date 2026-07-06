@@ -1,0 +1,71 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://direktdsp.github.io/InstallerGenerator/catalog.schema.json",
+  "title": "DirektDSP plugin installer catalog",
+  "description": "Machine-readable index of every published plugin installer. Consumed by the download site and the future desktop bulk-installer.",
+  "type": "object",
+  "required": ["generated_at", "publisher", "plugins"],
+  "additionalProperties": false,
+  "properties": {
+    "generated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC ISO-8601 timestamp of catalog generation."
+    },
+    "publisher": { "type": "string" },
+    "catalog_version": { "type": "string", "description": "Schema/catalog format version." },
+    "plugins": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/plugin" }
+    }
+  },
+  "definitions": {
+    "plugin": {
+      "type": "object",
+      "required": ["name", "version", "description", "formats", "installers"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "slug": { "type": "string" },
+        "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+([.-].*)?$" },
+        "description": { "type": "string" },
+        "tagline": { "type": "string" },
+        "website": { "type": "string" },
+        "repo": { "type": "string", "description": "owner/name on GitHub" },
+        "formats": {
+          "type": "array",
+          "items": { "enum": ["VST3", "AU", "CLAP", "Standalone"] }
+        },
+        "installers": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Per-OS installer download entries. An OS key is absent if no installer was built for it.",
+          "properties": {
+            "windows": { "$ref": "#/definitions/artifact" },
+            "macos": { "$ref": "#/definitions/artifact" },
+            "linux": { "$ref": "#/definitions/artifact" }
+          }
+        },
+        "install_paths": {
+          "type": "object",
+          "description": "Where each format is installed per OS — mirrors what the installers write, for verify/uninstall by the desktop app.",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": { "type": "string" }
+          }
+        }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "required": ["filename", "url", "sha256", "size"],
+      "additionalProperties": false,
+      "properties": {
+        "filename": { "type": "string" },
+        "url": { "type": "string" },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "size": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

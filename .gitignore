@@ -1,0 +1,14 @@
+# Build / CI scratch
+_artifacts/
+_incoming/
+dist/
+site/index.html
+site/catalog.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# OS
+.DS_Store
