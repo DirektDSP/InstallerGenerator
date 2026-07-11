@@ -55,6 +55,14 @@ jobs:
       PLUGIN_CONFIG_B64: ${{ secrets.CHASM_CONFIG_B64 }}
       MACOS_INSTALLER_SIGN_IDENTITY: ${{ secrets.MACOS_INSTALLER_SIGN_IDENTITY }}
 
+  spicerack:
+    uses: ./.github/workflows/build-plugin.yml
+    with: { plugin: spicerack }
+    secrets:
+      PAT: ${{ secrets.PAT }}
+      PLUGIN_CONFIG_B64: ${{ secrets.SPICERACK_CONFIG_B64 }}
+      MACOS_INSTALLER_SIGN_IDENTITY: ${{ secrets.MACOS_INSTALLER_SIGN_IDENTITY }}
+
   # Free / no-Moonbase plugins — no PLUGIN_CONFIG_B64 secret to pass.
   fuzzboy:
     uses: ./.github/workflows/build-plugin.yml
@@ -79,7 +87,7 @@ jobs:
 
   # ---- aggregate: release binaries, build catalog + site, deploy Pages ------
   publish:
-    needs: [polygraph, churn, chasm, fuzzboy, hot-potato, makeitloud]
+    needs: [polygraph, churn, chasm, spicerack, fuzzboy, hot-potato, makeitloud]
     # Publish whatever succeeded; a single failing plugin should not sink the
     # rest of the catalog.
     if: ${{ always() }}

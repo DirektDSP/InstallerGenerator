@@ -1,0 +1,43 @@
+# InstallerGenerator manifest for SpiceRack — written by scripts/new_plugin.py to
+# InstallerGenerator/plugins/spicerack.toml. That copy is the single source
+# of truth for installer copy text (description/tagline) and the catalog; keep
+# it in sync on every release-affecting change (see /release-plugin).
+schema_version = "1"
+
+[repo]
+name = "SpiceRack"
+ref  = ""
+
+[identity]
+product_name = "SpiceRack"
+company_name = "DirektDSP"
+bundle_id    = "com.direktdsp.spicerack"
+description  = "Rack-style multi-FX: parallel lanes of swappable pedal modules"
+tagline      = "season to taste"
+trial_days   = 14
+website      = "https://direktdsp.com"
+
+[formats]
+windows = ["VST3", "CLAP", "Standalone"]
+macos   = ["VST3", "AU", "CLAP", "Standalone"]
+linux   = ["VST3", "CLAP", "Standalone"]
+
+[build]
+system                = "cmake"
+build_dir             = "build"
+artefacts_subdir      = "SpiceRack_artefacts"
+needs_plugin_template = true
+disable_moonbase_flag = "SPICERACK_DISABLE_MOONBASE"
+config_secret         = "SPICERACK_CONFIG_B64"
+
+[build.targets]
+VST3       = "SpiceRack_VST3"
+CLAP       = "SpiceRack_CLAP"
+AU         = "SpiceRack_AU"
+Standalone = "SpiceRack_Standalone"
+
+[assets]
+icon_ico    = "packaging/icon.ico"
+icon_png    = "packaging/icon.png"
+header_bmp  = "packaging/header.bmp"
+welcome_bmp = "packaging/welcome.bmp"
