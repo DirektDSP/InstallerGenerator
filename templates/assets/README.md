@@ -8,7 +8,13 @@ plugin that ships no art of its own:
 - `welcome.bmp` (164×314, 24-bit) — MUI welcome / finish side panel
 
 They use the DirektDSP palette (paper `#F4EFE2`, ink `#1B1813`, red `#C8392B`)
-and a generic spectrum/level mark — deliberately tied to **no single plugin**.
+and the brand marks — deliberately tied to **no single plugin**:
+
+- **wordmark** — "Direkt" in Magneto Bold, as traced vector paths (from
+  `SpiceRack/assets/direktdsp-wordmark.svg`; no font needed to render)
+- **lettermark** — the Magneto "D" glyph isolated from the same trace
+- **captions** — Outfit (Google Fonts, OFL); install it locally before
+  regenerating (`~/.local/share/fonts` + `fc-cache`) or the text falls back
 
 ## Regenerate
 

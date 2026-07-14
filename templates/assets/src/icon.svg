@@ -1,14 +1,17 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="512" height="512">
-  <title>DirektDSP app icon</title>
-  <!-- 512x512 render of the generic house badge, used as the plugin ICON_BIG
-       and the Windows installer icon (CI derives icon.ico from this PNG). -->
-  <rect x="2.25" y="2.25" width="91.5" height="91.5" rx="8"
-        fill="#F4EFE2" stroke="#1B1813" stroke-width="4.5"/>
-  <g fill="#C8392B">
-    <rect x="20" y="46" width="7" height="18" rx="1.5"/>
-    <rect x="31" y="38" width="7" height="34" rx="1.5"/>
-    <rect x="42" y="24" width="7" height="48" rx="1.5"/>
-    <rect x="53" y="38" width="7" height="34" rx="1.5"/>
-    <rect x="64" y="46" width="7" height="18" rx="1.5"/>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <title>DirektDSP house icon</title>
+  <!-- Ink plate, paper Magneto-D lettermark (traced from the brand wordmark),
+       red baseline accent. -->
+  <rect width="512" height="512" rx="96" fill="#1B1813"/>
+  <!-- D glyph design space is 1272x414; crop to the glyph and centre it -->
+  <svg x="46" y="96" width="420" height="250" viewBox="0 20 380 374" preserveAspectRatio="xMidYMid meet">
+    <g transform="translate(0,414) scale(0.1,-0.1)" fill="#F4EFE2" stroke="none">
+<path d="M168 3353 l-133 -218 935 -6 c1027 -6 1000 -5 1137 -68 374 -175 314
+-806 -117 -1241 -252 -255 -562 -406 -893 -435 -63 -6 -76 -5 -73 6 3 8 100
+318 216 689 116 371 222 708 235 748 l24 72 -316 -2 -317 -3 -278 -895 c-153
+-492 -278 -896 -278 -898 0 -13 875 7 970 22 774 126 1341 494 1644 1067 360
+681 77 1252 -677 1363 -89 14 -245 16 -1025 16 l-920 0 -134 -217z"/>
+</g>
+  </svg>
+  <rect x="166" y="388" width="180" height="16" rx="8" fill="#C8392B"/>
 </svg>
