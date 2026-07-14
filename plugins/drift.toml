@@ -1,0 +1,43 @@
+# InstallerGenerator manifest for Drift — written by scripts/new_plugin.py to
+# InstallerGenerator/plugins/drift.toml. That copy is the single source
+# of truth for installer copy text (description/tagline) and the catalog; keep
+# it in sync on every release-affecting change (see /release-plugin).
+schema_version = "1"
+
+[repo]
+name = "Drift"
+ref  = ""
+
+[identity]
+product_name = "Drift"
+company_name = "DirektDSP"
+bundle_id    = "com.direktdsp.drift"
+description  = "Spectral panner — draw where every frequency lives in the stereo field, then set it in motion"
+tagline      = "Place every frequency."
+trial_days   = 14
+website      = "https://direktdsp.com"
+
+[formats]
+windows = ["VST3", "CLAP", "Standalone"]
+macos   = ["VST3", "AU", "CLAP", "Standalone"]
+linux   = ["VST3", "CLAP", "Standalone"]
+
+[build]
+system                = "cmake"
+build_dir             = "build"
+artefacts_subdir      = "Drift_artefacts"
+needs_plugin_template = true
+disable_moonbase_flag = "DRIFT_DISABLE_MOONBASE"
+config_secret         = "DRIFT_CONFIG_B64"
+
+[build.targets]
+VST3       = "Drift_VST3"
+CLAP       = "Drift_CLAP"
+AU         = "Drift_AU"
+Standalone = "Drift_Standalone"
+
+[assets]
+icon_ico    = "packaging/icon.ico"
+icon_png    = "packaging/icon.png"
+header_bmp  = "packaging/header.bmp"
+welcome_bmp = "packaging/welcome.bmp"

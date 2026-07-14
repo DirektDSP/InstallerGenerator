@@ -1,0 +1,43 @@
+# InstallerGenerator manifest for Echolith — written by scripts/new_plugin.py to
+# InstallerGenerator/plugins/echolith.toml. That copy is the single source
+# of truth for installer copy text (description/tagline) and the catalog; keep
+# it in sync on every release-affecting change (see /release-plugin).
+schema_version = "1"
+
+[repo]
+name = "Echolith"
+ref  = ""
+
+[identity]
+product_name = "Echolith"
+company_name = "DirektDSP"
+bundle_id    = "com.direktdsp.echolith"
+description  = "Spectral delay — per-band time and feedback drawn as curves on the spectrum"
+tagline      = "Every frequency echoes alone."
+trial_days   = 14
+website      = "https://direktdsp.com"
+
+[formats]
+windows = ["VST3", "CLAP", "Standalone"]
+macos   = ["VST3", "AU", "CLAP", "Standalone"]
+linux   = ["VST3", "CLAP", "Standalone"]
+
+[build]
+system                = "cmake"
+build_dir             = "build"
+artefacts_subdir      = "Echolith_artefacts"
+needs_plugin_template = true
+disable_moonbase_flag = "ECHOLITH_DISABLE_MOONBASE"
+config_secret         = "ECHOLITH_CONFIG_B64"
+
+[build.targets]
+VST3       = "Echolith_VST3"
+CLAP       = "Echolith_CLAP"
+AU         = "Echolith_AU"
+Standalone = "Echolith_Standalone"
+
+[assets]
+icon_ico    = "packaging/icon.ico"
+icon_png    = "packaging/icon.png"
+header_bmp  = "packaging/header.bmp"
+welcome_bmp = "packaging/welcome.bmp"

@@ -1,0 +1,43 @@
+# InstallerGenerator manifest for Cleave — written by scripts/new_plugin.py to
+# InstallerGenerator/plugins/cleave.toml. That copy is the single source
+# of truth for installer copy text (description/tagline) and the catalog; keep
+# it in sync on every release-affecting change (see /release-plugin).
+schema_version = "1"
+
+[repo]
+name = "Cleave"
+ref  = ""
+
+[identity]
+product_name = "Cleave"
+company_name = "DirektDSP"
+bundle_id    = "com.direktdsp.cleave"
+description  = "Spectral clipper — per-frequency clipping for loudness without the wreckage"
+tagline      = "Loudness without the wreckage."
+trial_days   = 14
+website      = "https://direktdsp.com"
+
+[formats]
+windows = ["VST3", "CLAP", "Standalone"]
+macos   = ["VST3", "AU", "CLAP", "Standalone"]
+linux   = ["VST3", "CLAP", "Standalone"]
+
+[build]
+system                = "cmake"
+build_dir             = "build"
+artefacts_subdir      = "Cleave_artefacts"
+needs_plugin_template = true
+disable_moonbase_flag = "CLEAVE_DISABLE_MOONBASE"
+config_secret         = "CLEAVE_CONFIG_B64"
+
+[build.targets]
+VST3       = "Cleave_VST3"
+CLAP       = "Cleave_CLAP"
+AU         = "Cleave_AU"
+Standalone = "Cleave_Standalone"
+
+[assets]
+icon_ico    = "packaging/icon.ico"
+icon_png    = "packaging/icon.png"
+header_bmp  = "packaging/header.bmp"
+welcome_bmp = "packaging/welcome.bmp"
