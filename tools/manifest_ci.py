@@ -56,6 +56,13 @@ def github_output(name: str) -> str:
         "build_dir": build.get("build_dir", "build"),
         "artefacts_subdir": build.get("artefacts_subdir", f"{repo['name']}_artefacts"),
         "disable_moonbase_flag": build.get("disable_moonbase_flag", ""),
+        # CMake cache var selecting a sanitizer build flavour. Defaults to the
+        # PluginTemplate convention derived from the moonbase flag prefix
+        # (SPICERACK_DISABLE_MOONBASE -> SPICERACK_SANITIZER); blank when the
+        # plugin has neither.
+        "sanitizer_flag": build.get(
+            "sanitizer_flag",
+            build.get("disable_moonbase_flag", "").replace("_DISABLE_MOONBASE", "_SANITIZER")),
         "config_secret": build.get("config_secret", ""),
         "has_tests": str(build.get("has_tests", True)).lower(),
         "windows_formats": " ".join(m["formats"]["windows"]),

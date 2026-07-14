@@ -21,6 +21,14 @@ on:
         required: false
         type: string
         default: ""
+      level:
+        # build    - compile + unit tests + installers (the original behavior)
+        # validate - + lint gate, pluginval, clapval
+        # full     - + sanitizers, coverage, benchmarks, user manual
+        description: "quality level: build | validate | full"
+        required: false
+        type: string
+        default: validate
     secrets:
       PAT: { required: true }
       PLUGIN_CONFIG_B64: { required: false }
@@ -36,6 +44,12 @@ on:
         required: false
         type: string
         default: ""
+      level:
+        description: quality level
+        required: false
+        type: choice
+        options: [build, validate, full]
+        default: validate
 
 env:
   BUILD_TYPE: Release
@@ -58,11 +72,13 @@ jobs:
       build_dir: ${{ steps.m.outputs.build_dir }}
       artefacts_subdir: ${{ steps.m.outputs.artefacts_subdir }}
       disable_moonbase_flag: ${{ steps.m.outputs.disable_moonbase_flag }}
+      sanitizer_flag: ${{ steps.m.outputs.sanitizer_flag }}
       config_secret: ${{ steps.m.outputs.config_secret }}
       has_tests: ${{ steps.m.outputs.has_tests }}
       windows_targets: ${{ steps.m.outputs.windows_targets }}
       macos_targets: ${{ steps.m.outputs.macos_targets }}
       linux_targets: ${{ steps.m.outputs.linux_targets }}
+      level: ${{ steps.level.outputs.level }}
     steps:
       - name: Checkout generator
         uses: actions/checkout@v4
@@ -75,12 +91,150 @@ jobs:
           REF="${{ inputs.ref }}"
           [ -z "$REF" ] && REF="${{ steps.m.outputs.ref }}"
           echo "ref=$REF" >> "$GITHUB_OUTPUT"
+      - name: Resolve quality level
+        id: level
+        run: |
+          LEVEL="${{ inputs.level }}"
+          case "$LEVEL" in build|validate|full) ;; *) LEVEL=validate ;; esac
+          echo "level=$LEVEL" >> "$GITHUB_OUTPUT"
+          echo "quality level: $LEVEL"
+
+  # --------------------------------------------------------------------------
+  # Lint gate (level >= validate): typos + clang-format + clang-tidy. Each
+  # tool runs only when the plugin ships its config — legacy plugins skip
+  # with a notice instead of failing. Build jobs wait on this so a lint
+  # failure aborts the run before paid runners spin up.
+  # --------------------------------------------------------------------------
+  lint:
+    needs: manifest
+    if: contains(fromJSON('["validate","full"]'), needs.manifest.outputs.level)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ needs.manifest.outputs.repo_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: _generator }
+      - name: Clone plugin
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ needs.manifest.outputs.company_name }}/${{ needs.manifest.outputs.repo_name }}
+          ref: ${{ needs.manifest.outputs.ref }}
+          path: ${{ needs.manifest.outputs.repo_name }}
+          submodules: recursive
+          token: ${{ secrets.PAT }}
+      - name: Clone PluginTemplate (sibling, if required)
+        if: needs.manifest.outputs.needs_plugin_template == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ needs.manifest.outputs.company_name }}/PluginTemplate
+          path: PluginTemplate
+          submodules: recursive
+          token: ${{ secrets.PAT }}
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential cmake ninja-build jq \
+            libasound2-dev libjack-jackd2-dev \
+            libfreetype-dev libx11-dev libxcomposite-dev \
+            libxcursor-dev libxext-dev libxfixes-dev \
+            libxinerama-dev libxrandr-dev libxrender-dev \
+            libwebkit2gtk-4.1-dev libcurl4-openssl-dev \
+            ladspa-sdk libgl1-mesa-dev \
+            clang clang-tidy
+      - name: Check spelling (typos)
+        run: |
+          if [ ! -f typos.toml ]; then
+            echo "::notice::no typos.toml — skipping spelling check"; exit 0
+          fi
+          curl -fsSL "https://github.com/crate-ci/typos/releases/download/v1.47.2/typos-v1.47.2-x86_64-unknown-linux-musl.tar.gz" \
+            | tar -xz -C /usr/local/bin ./typos
+          typos --config typos.toml
+      - name: Check formatting (clang-format)
+        run: |
+          if [ ! -f .clang-format ] || [ ! -d source ]; then
+            echo "::notice::no .clang-format (or no source/) — skipping format check"; exit 0
+          fi
+          find source -name "*.cpp" -o -name "*.h" | \
+            xargs -r clang-format --dry-run --Werror
+      - name: Run clang-tidy
+        env:
+          DISABLE_FLAG: ${{ needs.manifest.outputs.disable_moonbase_flag }}
+        run: |
+          if [ ! -f .clang-tidy ] || [ ! -d source ]; then
+            echo "::notice::no .clang-tidy (or no source/) — skipping static analysis"; exit 0
+          fi
+          cmake -B build-lint -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            ${DISABLE_FLAG:+-D${DISABLE_FLAG}=ON}
+          # Exclude UI + editor: they include BinaryData.h, which only exists
+          # after a real build (same workaround as the plugin-repo CIs).
+          find source -name "*.cpp" | grep -v "/UI/" | grep -v "PluginEditor" | \
+            xargs -r clang-tidy \
+              -p build-lint \
+              --config-file=.clang-tidy \
+              2>&1 | tee clang-tidy.log
+          if grep -q "error:" clang-tidy.log; then
+            echo "::error::clang-tidy reported errors — see log above"
+            exit 1
+          fi
+
+  # --------------------------------------------------------------------------
+  # User manual (level=full, or any v* tag ref): LaTeX -> PDF, embedded into
+  # the installers by the build jobs. Plugins without docs/manual skip.
+  # --------------------------------------------------------------------------
+  build-manual:
+    needs: manifest
+    if: needs.manifest.outputs.level == 'full' || startsWith(needs.manifest.outputs.ref, 'v')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ needs.manifest.outputs.repo_name }}
+    steps:
+      - name: Clone plugin
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ needs.manifest.outputs.company_name }}/${{ needs.manifest.outputs.repo_name }}
+          ref: ${{ needs.manifest.outputs.ref }}
+          path: ${{ needs.manifest.outputs.repo_name }}
+          token: ${{ secrets.PAT }}
+      - name: Probe for manual
+        id: probe
+        run: |
+          if [ -x docs/manual/build.sh ] || [ -f docs/manual/build.sh ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::no docs/manual/build.sh — skipping manual"
+          fi
+      - name: Install TeX Live
+        if: steps.probe.outputs.found == 'true'
+        run: sudo apt-get update && sudo apt-get install -y texlive-latex-recommended texlive-latex-extra texlive-fonts-recommended texlive-luatex latexmk
+      - name: Build manual PDF
+        if: steps.probe.outputs.found == 'true'
+        run: |
+          chmod +x docs/manual/build.sh
+          docs/manual/build.sh
+      - name: Upload manual PDF
+        if: steps.probe.outputs.found == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ needs.manifest.outputs.slug }}-manual
+          path: ${{ needs.manifest.outputs.repo_name }}/docs/manual/build/*.pdf
+          retention-days: 30
 
   # --------------------------------------------------------------------------
   # Linux build (always). Produces VST3/CLAP/Standalone bundles + runs tests.
   # --------------------------------------------------------------------------
   build-linux:
-    needs: manifest
+    needs: [manifest, lint, build-manual]
+    # Run whenever the manifest resolved, tolerating skipped quality jobs
+    # (level=build) and a failed manual (installer ships without the PDF).
+    if: >-
+      always() && needs.manifest.result == 'success' &&
+      (needs.lint.result == 'success' || needs.lint.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -158,6 +312,18 @@ jobs:
           [ -d "$base/CLAP" ] && cp -r "$base/CLAP/"*.clap ../_artifacts/linux/ || true
           [ -d "$base/Standalone" ] && cp -r "$base/Standalone/"* ../_artifacts/linux/ || true
           ls -laR ../_artifacts/linux/
+      - name: Upload raw plugin bundles (for validators)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ needs.manifest.outputs.slug }}-raw-linux
+          path: _artifacts/linux/
+          retention-days: 7
+      - name: Download manual PDF (optional)
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.manifest.outputs.slug }}-manual
+          path: _artifacts/linux
       - name: Package Linux zip
         run: |
           cd _artifacts/linux
@@ -176,7 +342,10 @@ jobs:
   # Windows build + NSIS installer.
   # --------------------------------------------------------------------------
   build-windows:
-    needs: manifest
+    needs: [manifest, lint, build-manual]
+    if: >-
+      always() && needs.manifest.result == 'success' &&
+      (needs.lint.result == 'success' || needs.lint.result == 'skipped')
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -237,6 +406,18 @@ jobs:
           [ -d "$base/CLAP" ] && cp "$base/CLAP/"*.clap ../_artifacts/windows/ || true
           [ -d "$base/Standalone" ] && cp "$base/Standalone/"*.exe ../_artifacts/windows/ || true
           ls -laR ../_artifacts/windows/
+      - name: Upload raw plugin bundles (for validators)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ needs.manifest.outputs.slug }}-raw-windows
+          path: _artifacts/windows/
+          retention-days: 7
+      - name: Download manual PDF (optional)
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.manifest.outputs.slug }}-manual
+          path: _artifacts/windows
       - name: Render installer from template
         shell: bash
         run: |
@@ -298,7 +479,10 @@ jobs:
   # macOS build (universal) + .pkg installer.
   # --------------------------------------------------------------------------
   build-macos:
-    needs: manifest
+    needs: [manifest, lint, build-manual]
+    if: >-
+      always() && needs.manifest.result == 'success' &&
+      (needs.lint.result == 'success' || needs.lint.result == 'skipped')
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
@@ -360,6 +544,18 @@ jobs:
           [ -d "$base/AU" ] && cp -r "$base/AU/"*.component ../_artifacts/macos/ || true
           [ -d "$base/Standalone" ] && cp -r "$base/Standalone/"*.app ../_artifacts/macos/ || true
           ls -laR ../_artifacts/macos/
+      - name: Upload raw plugin bundles (for validators)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ needs.manifest.outputs.slug }}-raw-macos
+          path: _artifacts/macos/
+          retention-days: 7
+      - name: Download manual PDF (optional)
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.manifest.outputs.slug }}-manual
+          path: _artifacts/macos
       - name: Render installer from template
         run: |
           python3 _generator/tools/render_installer.py "${{ needs.manifest.outputs.slug }}" \
@@ -397,3 +593,497 @@ jobs:
             _artifacts/*-macOS.pkg
             _artifacts/*-macOS.pkg.sha256
           retention-days: 7
+
+  # --------------------------------------------------------------------------
+  # pluginval (level >= validate): VST3 + AU at strictness 7, per OS, against
+  # the raw bundles the build jobs uploaded. CLAP is validated by clapval-*.
+  # --------------------------------------------------------------------------
+  pluginval-linux:
+    needs: [manifest, build-linux]
+    if: >-
+      always() && contains(fromJSON('["validate","full"]'), needs.manifest.outputs.level) &&
+      needs.build-linux.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: _generator }
+      - name: Download raw plugin bundles
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.manifest.outputs.slug }}-raw-linux
+          path: artifacts
+      - name: Install pluginval + xvfb
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+          curl -fsSL "https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_Linux.zip" -o pluginval.zip
+          unzip -q pluginval.zip
+          chmod +x pluginval
+      - name: Validate plugins
+        timeout-minutes: 15
+        run: |
+          chmod +x _generator/tools/ci/run_pluginval.sh
+          _generator/tools/ci/run_pluginval.sh ./pluginval artifacts pluginval_logs 7
+      - name: Upload pluginval logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ needs.manifest.outputs.slug }}-pluginval-linux
+          path: pluginval_logs/
+          retention-days: 14
+
+  pluginval-windows:
+    needs: [manifest, build-windows]
+    if: >-
+      always() && contains(fromJSON('["validate","full"]'), needs.manifest.outputs.level) &&
+      needs.build-windows.result == 'success'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: _generator }
+      - name: Download raw plugin bundles
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.manifest.outputs.slug }}-raw-windows
+          path: artifacts
+      - name: Install pluginval
+        shell: bash
+        run: |
+          curl -fsSL "https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_Windows.zip" -o pluginval.zip
+          unzip -q pluginval.zip
+          chmod +x pluginval.exe
+      - name: Validate plugins
+        shell: bash
+        timeout-minutes: 15
+        run: |
+          chmod +x _generator/tools/ci/run_pluginval.sh
+          _generator/tools/ci/run_pluginval.sh ./pluginval.exe artifacts pluginval_logs 7
+      - name: Upload pluginval logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ needs.manifest.outputs.slug }}-pluginval-windows
+          path: pluginval_logs/
+          retention-days: 14
+
+  pluginval-macos:
+    needs: [manifest, build-macos]
+    if: >-
+      always() && contains(fromJSON('["validate","full"]'), needs.manifest.outputs.level) &&
+      needs.build-macos.result == 'success'
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: _generator }
+      - name: Download raw plugin bundles
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.manifest.outputs.slug }}-raw-macos
+          path: artifacts
+      - name: Register AU components
+        run: |
+          AU_DIR="$HOME/Library/Audio/Plug-Ins/Components"
+          mkdir -p "$AU_DIR"
+          for comp in artifacts/*.component; do
+            [ -e "$comp" ] || continue
+            echo "Installing AU: $comp -> $AU_DIR/"
+            cp -R "$comp" "$AU_DIR/"
+          done
+          killall -9 AudioComponentRegistrar 2>/dev/null || true
+          sleep 2
+      - name: Install pluginval
+        run: |
+          curl -fsSL "https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_macOS.zip" -o pluginval.zip
+          unzip -q pluginval.zip
+      - name: Validate plugins
+        timeout-minutes: 15
+        run: |
+          chmod +x _generator/tools/ci/run_pluginval.sh
+          _generator/tools/ci/run_pluginval.sh pluginval.app/Contents/MacOS/pluginval artifacts pluginval_logs 7
+      - name: Upload pluginval logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ needs.manifest.outputs.slug }}-pluginval-macos
+          path: pluginval_logs/
+          retention-days: 14
+
+  # --------------------------------------------------------------------------
+  # clapval (level >= validate): CLAP validation via clap-validator, pinned
+  # 0.3.2 (releases/latest is rate-limited unauthenticated on runner IPs).
+  # --------------------------------------------------------------------------
+  clapval-linux:
+    needs: [manifest, build-linux]
+    if: >-
+      always() && contains(fromJSON('["validate","full"]'), needs.manifest.outputs.level) &&
+      needs.build-linux.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: _generator }
+      - name: Download raw plugin bundles
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.manifest.outputs.slug }}-raw-linux
+          path: artifacts
+      - name: Install clap-validator
+        run: |
+          VERSION=0.3.2
+          curl -fsSL "https://github.com/free-audio/clap-validator/releases/download/${VERSION}/clap-validator-${VERSION}-ubuntu-18.04.tar.gz" -o clapval.tar.gz
+          tar -xzf clapval.tar.gz
+          chmod +x clap-validator
+      - name: Validate CLAP plugins
+        timeout-minutes: 15
+        run: |
+          chmod +x _generator/tools/ci/run_clapval.sh
+          _generator/tools/ci/run_clapval.sh ./clap-validator artifacts clapval_logs
+      - name: Upload clapval logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ needs.manifest.outputs.slug }}-clapval-linux
+          path: clapval_logs/
+          retention-days: 14
+
+  clapval-windows:
+    needs: [manifest, build-windows]
+    if: >-
+      always() && contains(fromJSON('["validate","full"]'), needs.manifest.outputs.level) &&
+      needs.build-windows.result == 'success'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: _generator }
+      - name: Download raw plugin bundles
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.manifest.outputs.slug }}-raw-windows
+          path: artifacts
+      - name: Install clap-validator
+        shell: bash
+        run: |
+          VERSION=0.3.2
+          curl -fsSL "https://github.com/free-audio/clap-validator/releases/download/${VERSION}/clap-validator-${VERSION}-windows.zip" -o clapval.zip
+          unzip -q clapval.zip
+          chmod +x clap-validator.exe
+      - name: Validate CLAP plugins
+        shell: bash
+        timeout-minutes: 15
+        run: |
+          chmod +x _generator/tools/ci/run_clapval.sh
+          _generator/tools/ci/run_clapval.sh ./clap-validator.exe artifacts clapval_logs
+      - name: Upload clapval logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ needs.manifest.outputs.slug }}-clapval-windows
+          path: clapval_logs/
+          retention-days: 14
+
+  clapval-macos:
+    needs: [manifest, build-macos]
+    if: >-
+      always() && contains(fromJSON('["validate","full"]'), needs.manifest.outputs.level) &&
+      needs.build-macos.result == 'success'
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: _generator }
+      - name: Download raw plugin bundles
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.manifest.outputs.slug }}-raw-macos
+          path: artifacts
+      - name: Install clap-validator
+        run: |
+          VERSION=0.3.2
+          curl -fsSL "https://github.com/free-audio/clap-validator/releases/download/${VERSION}/clap-validator-${VERSION}-macos-universal.tar.gz" -o clapval.tar.gz
+          mkdir clapval && tar -xzf clapval.tar.gz -C clapval
+          # Tarball layout varies by release (0.3.2 nests the binary under binaries/)
+          BIN=$(find clapval -name clap-validator -type f | head -1)
+          test -n "$BIN"
+          chmod +x "$BIN"
+          echo "$PWD/$(dirname "$BIN")" >> "$GITHUB_PATH"
+      - name: Validate CLAP plugins
+        timeout-minutes: 15
+        run: |
+          chmod +x _generator/tools/ci/run_clapval.sh
+          _generator/tools/ci/run_clapval.sh clap-validator artifacts clapval_logs
+      - name: Upload clapval logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ needs.manifest.outputs.slug }}-clapval-macos
+          path: clapval_logs/
+          retention-days: 14
+
+  # --------------------------------------------------------------------------
+  # Sanitizers (level=full, Linux): asan / tsan / ubsan over the test suite.
+  # Needs the plugin's CMake to expose the sanitizer cache var (manifest
+  # sanitizer_flag); suppression files are picked up when the repo ships them.
+  # --------------------------------------------------------------------------
+  sanitizers-linux:
+    needs: [manifest, lint]
+    if: >-
+      always() && needs.manifest.outputs.level == 'full' &&
+      needs.manifest.outputs.has_tests == 'true' &&
+      needs.manifest.outputs.sanitizer_flag != '' &&
+      (needs.lint.result == 'success' || needs.lint.result == 'skipped')
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer: [asan, tsan, ubsan]
+    defaults:
+      run:
+        working-directory: ${{ needs.manifest.outputs.repo_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: _generator }
+      - name: Clone plugin
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ needs.manifest.outputs.company_name }}/${{ needs.manifest.outputs.repo_name }}
+          ref: ${{ needs.manifest.outputs.ref }}
+          path: ${{ needs.manifest.outputs.repo_name }}
+          submodules: recursive
+          token: ${{ secrets.PAT }}
+      - name: Clone PluginTemplate (sibling, if required)
+        if: needs.manifest.outputs.needs_plugin_template == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ needs.manifest.outputs.company_name }}/PluginTemplate
+          path: PluginTemplate
+          submodules: recursive
+          token: ${{ secrets.PAT }}
+      - name: Probe for sanitizer support
+        id: probe
+        env:
+          SANITIZER_FLAG: ${{ needs.manifest.outputs.sanitizer_flag }}
+        run: |
+          if grep -q "$SANITIZER_FLAG" CMakeLists.txt 2>/dev/null; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::CMakeLists has no $SANITIZER_FLAG — skipping sanitizer build"
+          fi
+      - name: Install deps
+        if: steps.probe.outputs.found == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential cmake ninja-build jq \
+            libasound2-dev libjack-jackd2-dev \
+            libfreetype-dev libx11-dev libxcomposite-dev \
+            libxcursor-dev libxext-dev libxfixes-dev \
+            libxinerama-dev libxrandr-dev libxrender-dev \
+            libwebkit2gtk-4.1-dev libcurl4-openssl-dev \
+            ladspa-sdk libgl1-mesa-dev llvm
+      - name: Configure
+        if: steps.probe.outputs.found == 'true'
+        env:
+          DISABLE_FLAG: ${{ needs.manifest.outputs.disable_moonbase_flag }}
+          SANITIZER_FLAG: ${{ needs.manifest.outputs.sanitizer_flag }}
+        run: |
+          # ubsan maps to the same CMake flavour as asan (combined build) but
+          # runs with a UB-focused runtime filter.
+          SANITIZER="${{ matrix.sanitizer }}"
+          [[ "$SANITIZER" == "ubsan" ]] && SANITIZER="asan"
+          cmake -B build-sanitizer -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            ${DISABLE_FLAG:+-D${DISABLE_FLAG}=ON} \
+            -D${SANITIZER_FLAG}=$SANITIZER
+      - name: Build Tests target
+        if: steps.probe.outputs.found == 'true'
+        run: cmake --build build-sanitizer --config Debug --target Tests
+      - name: Run ctest under ${{ matrix.sanitizer }}
+        if: steps.probe.outputs.found == 'true'
+        env:
+          ASAN_SYMBOLIZER_PATH: /usr/bin/llvm-symbolizer
+        run: |
+          set -o pipefail
+          mkdir -p sanitizer-logs
+          # Suppression files are optional per plugin
+          SUPP="$PWD/.github/sanitizer"
+          ASAN_OPTIONS="detect_leaks=1:halt_on_error=1:abort_on_error=0:strict_string_checks=1:detect_stack_use_after_return=1"
+          LSAN_OPTIONS="print_suppressions=0"
+          [ -f "$SUPP/lsan.supp" ] && LSAN_OPTIONS="suppressions=$SUPP/lsan.supp:$LSAN_OPTIONS"
+          UBSAN_OPTIONS="print_stacktrace=1:halt_on_error=1"
+          [ -f "$SUPP/ubsan.supp" ] && UBSAN_OPTIONS="$UBSAN_OPTIONS:suppressions=$SUPP/ubsan.supp"
+          TSAN_OPTIONS="halt_on_error=0:exitcode=0:second_deadlock_stack=1"
+          [ -f "$SUPP/tsan.supp" ] && TSAN_OPTIONS="$TSAN_OPTIONS:suppressions=$SUPP/tsan.supp"
+          export ASAN_OPTIONS LSAN_OPTIONS UBSAN_OPTIONS TSAN_OPTIONS
+
+          if [ "${{ matrix.sanitizer }}" = "tsan" ]; then
+            ctest --test-dir build-sanitizer --output-on-failure -C Debug -E "Benchmarks" 2>&1 | tee sanitizer-logs/tsan.log
+            if grep -q "ThreadSanitizer:" sanitizer-logs/tsan.log; then
+              echo "::warning::TSAN reported one or more races — review sanitizer-logs/tsan.log"
+            fi
+          elif [ "${{ matrix.sanitizer }}" = "ubsan" ]; then
+            ASAN_OPTIONS="detect_leaks=0:halt_on_error=0" \
+            ctest --test-dir build-sanitizer --output-on-failure -C Debug -E "Benchmarks" 2>&1 | tee sanitizer-logs/ubsan.log
+            if grep -q "runtime error:" sanitizer-logs/ubsan.log; then
+              echo "::error::UBSAN reported undefined behaviour — review sanitizer-logs/ubsan.log"
+              exit 1
+            fi
+          else
+            ctest --test-dir build-sanitizer --output-on-failure -C Debug -E "Benchmarks" 2>&1 | tee sanitizer-logs/asan.log
+          fi
+      - name: Upload sanitizer logs
+        if: always() && steps.probe.outputs.found == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ needs.manifest.outputs.slug }}-sanitizer-${{ matrix.sanitizer }}-logs
+          path: ${{ needs.manifest.outputs.repo_name }}/sanitizer-logs/
+          retention-days: 14
+
+  # --------------------------------------------------------------------------
+  # Coverage (level=full, Linux, gcov/lcov). Source-only, UI excluded (no
+  # headless test path); warns under the 80% line target.
+  # --------------------------------------------------------------------------
+  coverage:
+    needs: [manifest, lint]
+    if: >-
+      always() && needs.manifest.outputs.level == 'full' &&
+      needs.manifest.outputs.has_tests == 'true' &&
+      (needs.lint.result == 'success' || needs.lint.result == 'skipped')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ needs.manifest.outputs.repo_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: _generator }
+      - name: Clone plugin
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ needs.manifest.outputs.company_name }}/${{ needs.manifest.outputs.repo_name }}
+          ref: ${{ needs.manifest.outputs.ref }}
+          path: ${{ needs.manifest.outputs.repo_name }}
+          submodules: recursive
+          token: ${{ secrets.PAT }}
+      - name: Clone PluginTemplate (sibling, if required)
+        if: needs.manifest.outputs.needs_plugin_template == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ needs.manifest.outputs.company_name }}/PluginTemplate
+          path: PluginTemplate
+          submodules: recursive
+          token: ${{ secrets.PAT }}
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential cmake ninja-build lcov \
+            libasound2-dev libjack-jackd2-dev \
+            libfreetype-dev libx11-dev libxcomposite-dev \
+            libxcursor-dev libxext-dev libxfixes-dev \
+            libxinerama-dev libxrandr-dev libxrender-dev \
+            libwebkit2gtk-4.1-dev libcurl4-openssl-dev \
+            ladspa-sdk libgl1-mesa-dev
+      - name: Configure with coverage flags
+        env:
+          DISABLE_FLAG: ${{ needs.manifest.outputs.disable_moonbase_flag }}
+        run: |
+          cmake -B build-cov -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            ${DISABLE_FLAG:+-D${DISABLE_FLAG}=ON} \
+            -DCMAKE_CXX_FLAGS="--coverage -fprofile-arcs -ftest-coverage -O0" \
+            -DCMAKE_EXE_LINKER_FLAGS="--coverage"
+      - name: Build Tests
+        run: cmake --build build-cov --target Tests
+      - name: Run tests
+        run: ctest --test-dir build-cov --output-on-failure -C Debug -E "Benchmarks"
+      - name: Capture + filter coverage (lcov)
+        run: |
+          lcov --capture --directory build-cov --output-file coverage.info \
+            --ignore-errors mismatch,source
+          lcov --extract coverage.info "*/${{ needs.manifest.outputs.repo_name }}/source/*" \
+            --output-file coverage_src.info --ignore-errors unused,source
+          # Drop UI and editor (no headless test path)
+          lcov --remove coverage_src.info '*/source/UI/*' '*/source/PluginEditor*' \
+            --output-file coverage_filtered.info --ignore-errors unused,source
+      - name: Generate HTML report
+        run: genhtml coverage_filtered.info --output-directory coverage-report --ignore-errors source
+      - name: Print coverage summary
+        run: |
+          lcov --summary coverage_filtered.info 2>&1 | tee coverage-summary.txt
+          LINES=$(grep -oP 'lines\.*: \K[0-9.]+' coverage-summary.txt | head -1)
+          echo "Line coverage: ${LINES}%"
+          if [ -n "$LINES" ] && (( $(echo "$LINES < 80.0" | bc -l) )); then
+            echo "::warning::Line coverage ${LINES}% is below the 80% target"
+          fi
+      - name: Upload HTML coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ needs.manifest.outputs.slug }}-coverage
+          path: ${{ needs.manifest.outputs.repo_name }}/coverage-report/
+          retention-days: 30
+
+  # --------------------------------------------------------------------------
+  # Benchmarks (level=full, Linux): timing artifact for trend tracking.
+  # Skips (with a notice) when the plugin registers no Benchmarks tests.
+  # --------------------------------------------------------------------------
+  benchmarks-linux:
+    needs: [manifest, lint]
+    if: >-
+      always() && needs.manifest.outputs.level == 'full' &&
+      needs.manifest.outputs.has_tests == 'true' &&
+      (needs.lint.result == 'success' || needs.lint.result == 'skipped')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ needs.manifest.outputs.repo_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: _generator }
+      - name: Clone plugin
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ needs.manifest.outputs.company_name }}/${{ needs.manifest.outputs.repo_name }}
+          ref: ${{ needs.manifest.outputs.ref }}
+          path: ${{ needs.manifest.outputs.repo_name }}
+          submodules: recursive
+          token: ${{ secrets.PAT }}
+      - name: Clone PluginTemplate (sibling, if required)
+        if: needs.manifest.outputs.needs_plugin_template == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ needs.manifest.outputs.company_name }}/PluginTemplate
+          path: PluginTemplate
+          submodules: recursive
+          token: ${{ secrets.PAT }}
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential cmake ninja-build \
+            libasound2-dev libjack-jackd2-dev \
+            libfreetype-dev libx11-dev libxcomposite-dev \
+            libxcursor-dev libxext-dev libxfixes-dev \
+            libxinerama-dev libxrandr-dev libxrender-dev \
+            libwebkit2gtk-4.1-dev libcurl4-openssl-dev \
+            ladspa-sdk libgl1-mesa-dev
+      - name: Build + run benchmarks
+        env:
+          DISABLE_FLAG: ${{ needs.manifest.outputs.disable_moonbase_flag }}
+        run: |
+          cmake -B build-bench -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            ${DISABLE_FLAG:+-D${DISABLE_FLAG}=ON}
+          COUNT=$(ctest --test-dir build-bench -N -R "Benchmarks" 2>/dev/null | awk '/Total Tests:/ {print $3}')
+          if [ "${COUNT:-0}" = "0" ]; then
+            echo "::notice::plugin registers no Benchmarks tests — skipping"
+            exit 0
+          fi
+          cmake --build build-bench --config Release --target Benchmarks
+          mkdir -p benchmark-results
+          ctest --test-dir build-bench --output-on-failure -C Release -R "Benchmarks" \
+            -D ExtraVerbose 2>&1 | tee benchmark-results/results.txt
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ needs.manifest.outputs.slug }}-benchmarks
+          path: ${{ needs.manifest.outputs.repo_name }}/benchmark-results/
+          retention-days: 90
+          if-no-files-found: ignore

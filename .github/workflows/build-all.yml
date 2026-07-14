@@ -16,7 +16,15 @@ on:
         description: tag for the aggregate release (e.g. installers-2026-07-06)
         required: true
         type: string
-  # Nightly refresh of the download site against each plugin's default branch.
+      level:
+        description: "quality level for every plugin: build | validate | full"
+        required: false
+        type: choice
+        options: [build, validate, full]
+        default: validate
+  # Weekly refresh of the download site against each plugin's default branch —
+  # scheduled runs use the full quality suite (sanitizers, coverage,
+  # benchmarks, manuals) on top of validate's lint + pluginval + clapval.
   schedule:
     - cron: "0 6 * * 1"
 
@@ -33,7 +41,9 @@ jobs:
   # ---- one call job per plugin (maps that plugin's config secret) -----------
   polygraph:
     uses: ./.github/workflows/build-plugin.yml
-    with: { plugin: polygraph }
+    with:
+      plugin: polygraph
+      level: ${{ github.event_name == 'schedule' && 'full' || inputs.level || 'validate' }}
     secrets:
       PAT: ${{ secrets.PAT }}
       PLUGIN_CONFIG_B64: ${{ secrets.POLYGRAPH_CONFIG_B64 }}
@@ -41,7 +51,9 @@ jobs:
 
   churn:
     uses: ./.github/workflows/build-plugin.yml
-    with: { plugin: churn }
+    with:
+      plugin: churn
+      level: ${{ github.event_name == 'schedule' && 'full' || inputs.level || 'validate' }}
     secrets:
       PAT: ${{ secrets.PAT }}
       PLUGIN_CONFIG_B64: ${{ secrets.CHURN_CONFIG_B64 }}
@@ -49,7 +61,9 @@ jobs:
 
   chasm:
     uses: ./.github/workflows/build-plugin.yml
-    with: { plugin: chasm }
+    with:
+      plugin: chasm
+      level: ${{ github.event_name == 'schedule' && 'full' || inputs.level || 'validate' }}
     secrets:
       PAT: ${{ secrets.PAT }}
       PLUGIN_CONFIG_B64: ${{ secrets.CHASM_CONFIG_B64 }}
@@ -57,7 +71,9 @@ jobs:
 
   spicerack:
     uses: ./.github/workflows/build-plugin.yml
-    with: { plugin: spicerack }
+    with:
+      plugin: spicerack
+      level: ${{ github.event_name == 'schedule' && 'full' || inputs.level || 'validate' }}
     secrets:
       PAT: ${{ secrets.PAT }}
       PLUGIN_CONFIG_B64: ${{ secrets.SPICERACK_CONFIG_B64 }}
@@ -66,21 +82,27 @@ jobs:
   # Free / no-Moonbase plugins — no PLUGIN_CONFIG_B64 secret to pass.
   fuzzboy:
     uses: ./.github/workflows/build-plugin.yml
-    with: { plugin: fuzzboy }
+    with:
+      plugin: fuzzboy
+      level: ${{ github.event_name == 'schedule' && 'full' || inputs.level || 'validate' }}
     secrets:
       PAT: ${{ secrets.PAT }}
       MACOS_INSTALLER_SIGN_IDENTITY: ${{ secrets.MACOS_INSTALLER_SIGN_IDENTITY }}
 
   hot-potato:
     uses: ./.github/workflows/build-plugin.yml
-    with: { plugin: hot-potato }
+    with:
+      plugin: hot-potato
+      level: ${{ github.event_name == 'schedule' && 'full' || inputs.level || 'validate' }}
     secrets:
       PAT: ${{ secrets.PAT }}
       MACOS_INSTALLER_SIGN_IDENTITY: ${{ secrets.MACOS_INSTALLER_SIGN_IDENTITY }}
 
   makeitloud:
     uses: ./.github/workflows/build-plugin.yml
-    with: { plugin: makeitloud }
+    with:
+      plugin: makeitloud
+      level: ${{ github.event_name == 'schedule' && 'full' || inputs.level || 'validate' }}
     secrets:
       PAT: ${{ secrets.PAT }}
       MACOS_INSTALLER_SIGN_IDENTITY: ${{ secrets.MACOS_INSTALLER_SIGN_IDENTITY }}
