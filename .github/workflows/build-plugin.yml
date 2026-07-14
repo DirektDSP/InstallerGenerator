@@ -115,20 +115,26 @@ jobs:
       - name: Recreate moonbase config
         # secrets.* is NOT available in step-level if:, so gate inside the script
         # on the env var (env CAN read secrets). A blank secret is a no-op.
+        # workflow_call passes PLUGIN_CONFIG_B64; manual dispatch falls back to
+        # the per-plugin repo secret named by the manifest (config_secret).
+        id: mbconfig
         env:
-          PLUGIN_CONFIG_B64: ${{ secrets.PLUGIN_CONFIG_B64 }}
+          PLUGIN_CONFIG_B64: ${{ secrets.PLUGIN_CONFIG_B64 || secrets[needs.manifest.outputs.config_secret] }}
+          DISABLE_FLAG: ${{ needs.manifest.outputs.disable_moonbase_flag }}
         working-directory: ${{ needs.manifest.outputs.repo_name }}
         run: |
           if [ -n "$PLUGIN_CONFIG_B64" ]; then
             mkdir -p assets
             echo "$PLUGIN_CONFIG_B64" | base64 --decode > assets/moonbase_api_config.json
             echo "moonbase config written"
+            echo "cmake_flags=" >> "$GITHUB_OUTPUT"
           else
-            echo "no PLUGIN_CONFIG_B64 secret — skipping (Moonbase disabled build)"
+            echo "no config secret — building with Moonbase disabled"
+            echo "cmake_flags=${DISABLE_FLAG:+-D${DISABLE_FLAG}=ON}" >> "$GITHUB_OUTPUT"
           fi
       - name: Configure
         working-directory: ${{ needs.manifest.outputs.repo_name }}
-        run: cmake -B "${{ needs.manifest.outputs.build_dir }}" -G Ninja -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+        run: cmake -B "${{ needs.manifest.outputs.build_dir }}" -G Ninja -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} ${{ steps.mbconfig.outputs.cmake_flags }}
       - name: Build
         working-directory: ${{ needs.manifest.outputs.repo_name }}
         run: cmake --build "${{ needs.manifest.outputs.build_dir }}" --config ${{ env.BUILD_TYPE }} --target ${{ needs.manifest.outputs.linux_targets }}
@@ -193,21 +199,27 @@ jobs:
           token: ${{ secrets.PAT }}
       - name: Recreate moonbase config
         # secrets.* is NOT available in step-level if:, so gate inside the script.
+        # workflow_call passes PLUGIN_CONFIG_B64; manual dispatch falls back to
+        # the per-plugin repo secret named by the manifest (config_secret).
+        id: mbconfig
         shell: bash
         env:
-          PLUGIN_CONFIG_B64: ${{ secrets.PLUGIN_CONFIG_B64 }}
+          PLUGIN_CONFIG_B64: ${{ secrets.PLUGIN_CONFIG_B64 || secrets[needs.manifest.outputs.config_secret] }}
+          DISABLE_FLAG: ${{ needs.manifest.outputs.disable_moonbase_flag }}
         working-directory: ${{ needs.manifest.outputs.repo_name }}
         run: |
           if [ -n "$PLUGIN_CONFIG_B64" ]; then
             mkdir -p assets
             echo "$PLUGIN_CONFIG_B64" | base64 --decode > assets/moonbase_api_config.json
             echo "moonbase config written"
+            echo "cmake_flags=" >> "$GITHUB_OUTPUT"
           else
-            echo "no PLUGIN_CONFIG_B64 secret — skipping"
+            echo "no config secret — building with Moonbase disabled"
+            echo "cmake_flags=${DISABLE_FLAG:+-D${DISABLE_FLAG}=ON}" >> "$GITHUB_OUTPUT"
           fi
       - name: Configure
         working-directory: ${{ needs.manifest.outputs.repo_name }}
-        run: cmake -B "${{ needs.manifest.outputs.build_dir }}" -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+        run: cmake -B "${{ needs.manifest.outputs.build_dir }}" -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} ${{ steps.mbconfig.outputs.cmake_flags }}
       - name: Build
         working-directory: ${{ needs.manifest.outputs.repo_name }}
         run: cmake --build "${{ needs.manifest.outputs.build_dir }}" --config ${{ env.BUILD_TYPE }} --parallel 4 --target ${{ needs.manifest.outputs.windows_targets }}
@@ -311,20 +323,26 @@ jobs:
         run: brew install ninja jq
       - name: Recreate moonbase config
         # secrets.* is NOT available in step-level if:, so gate inside the script.
+        # workflow_call passes PLUGIN_CONFIG_B64; manual dispatch falls back to
+        # the per-plugin repo secret named by the manifest (config_secret).
+        id: mbconfig
         env:
-          PLUGIN_CONFIG_B64: ${{ secrets.PLUGIN_CONFIG_B64 }}
+          PLUGIN_CONFIG_B64: ${{ secrets.PLUGIN_CONFIG_B64 || secrets[needs.manifest.outputs.config_secret] }}
+          DISABLE_FLAG: ${{ needs.manifest.outputs.disable_moonbase_flag }}
         working-directory: ${{ needs.manifest.outputs.repo_name }}
         run: |
           if [ -n "$PLUGIN_CONFIG_B64" ]; then
             mkdir -p assets
             echo "$PLUGIN_CONFIG_B64" | base64 --decode > assets/moonbase_api_config.json
             echo "moonbase config written"
+            echo "cmake_flags=" >> "$GITHUB_OUTPUT"
           else
-            echo "no PLUGIN_CONFIG_B64 secret — skipping"
+            echo "no config secret — building with Moonbase disabled"
+            echo "cmake_flags=${DISABLE_FLAG:+-D${DISABLE_FLAG}=ON}" >> "$GITHUB_OUTPUT"
           fi
       - name: Configure
         working-directory: ${{ needs.manifest.outputs.repo_name }}
-        run: cmake -B "${{ needs.manifest.outputs.build_dir }}" -G Ninja -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"
+        run: cmake -B "${{ needs.manifest.outputs.build_dir }}" -G Ninja -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64" ${{ steps.mbconfig.outputs.cmake_flags }}
       - name: Build
         working-directory: ${{ needs.manifest.outputs.repo_name }}
         run: cmake --build "${{ needs.manifest.outputs.build_dir }}" --config ${{ env.BUILD_TYPE }} --target ${{ needs.manifest.outputs.macos_targets }}
