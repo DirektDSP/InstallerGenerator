@@ -22,10 +22,12 @@ mkdir -p "$OUT_DIR"
 # .clap excluded — pluginval doesn't support CLAP; use run_clapval.sh instead.
 # .component (AU) included on macOS if present. The caller (CI workflow) must
 # register them with the system audio component registry first.
+# -prune: a modern .vst3 is a bundle DIRECTORY whose Contents/ nests a .vst3
+# module file — without pruning the same plugin gets validated twice.
 plugins=()
 while IFS= read -r line; do
     plugins+=("$line")
-done < <(find "$ARTIFACT_DIR" -name '*.vst3')
+done < <(find "$ARTIFACT_DIR" -name '*.vst3' -prune)
 
 # On macOS, also pick up AU .component bundles.
 if [[ "$(uname -s)" == "Darwin" ]]; then
@@ -48,6 +50,7 @@ fi
 
 PLUGINVAL_ARGS=(
   --validate-in-process
+  --verbose
   --timeout-ms 30000
   --strictness-level "$STRICTNESS"
   --output-dir "$OUT_DIR"
