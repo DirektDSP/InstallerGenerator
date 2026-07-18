@@ -947,6 +947,15 @@ jobs:
             -D${SANITIZER_FLAG}=$SANITIZER
       - name: Build Tests target
         if: steps.probe.outputs.found == 'true'
+        # catch_discover_tests runs the freshly-linked Tests binary POST_BUILD
+        # to enumerate test cases. Under ASan that discovery run has LSan
+        # enabled but no suppressions loaded, so known one-shot static-init
+        # leaks (see each repo's .github/sanitizer/lsan.supp) abort discovery
+        # and fail the build target. Leak detection is pointless during
+        # --list-tests; the "Run ctest" step below re-enables it WITH the
+        # suppression files.
+        env:
+          ASAN_OPTIONS: detect_leaks=0
         run: cmake --build build-sanitizer --config Debug --target Tests
       - name: Run ctest under ${{ matrix.sanitizer }}
         if: steps.probe.outputs.found == 'true'
@@ -1047,10 +1056,13 @@ jobs:
         env:
           DISABLE_FLAG: ${{ needs.manifest.outputs.disable_moonbase_flag }}
         run: |
+          # -fprofile-update=atomic: JUCE tests spin real threads (message
+          # thread, audio workers); non-atomic gcov counters race and go
+          # negative, which geninfo treats as a hard error at capture time.
           cmake -B build-cov -G Ninja \
             -DCMAKE_BUILD_TYPE=Debug \
             ${DISABLE_FLAG:+-D${DISABLE_FLAG}=ON} \
-            -DCMAKE_CXX_FLAGS="--coverage -fprofile-arcs -ftest-coverage -O0" \
+            -DCMAKE_CXX_FLAGS="--coverage -fprofile-arcs -ftest-coverage -fprofile-update=atomic -O0" \
             -DCMAKE_EXE_LINKER_FLAGS="--coverage"
       - name: Build Tests
         run: cmake --build build-cov --target Tests
@@ -1058,8 +1070,10 @@ jobs:
         run: ctest --test-dir build-cov --output-on-failure -C Debug -E "Benchmarks"
       - name: Capture + filter coverage (lcov)
         run: |
+          # negative: residual racy counters (third-party TUs built without
+          # atomic updates) should degrade the numbers, not kill the job.
           lcov --capture --directory build-cov --output-file coverage.info \
-            --ignore-errors mismatch,source
+            --ignore-errors mismatch,source,negative
           lcov --extract coverage.info "*/${{ needs.manifest.outputs.repo_name }}/source/*" \
             --output-file coverage_src.info --ignore-errors unused,source
           # Drop UI and editor (no headless test path)
