@@ -175,8 +175,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: _incoming
-          # Each build-plugin run uploads <slug>-{windows,macos,linux}
-          pattern: "*-*"
+          # ONLY the installer artifacts (<slug>-{windows,macos,linux}). A bare
+          # "*-*" also pulls every <slug>-raw-* bundle and val log — 140
+          # artifacts incl. two ~540 MB chasm blobs — and the big raw downloads
+          # flaked out three runs in a row ("failed after 5 retries"), sinking
+          # publish. Keep this brace list in sync when adding a plugin (same
+          # place you add the call job above).
+          pattern: "{polygraph,churn,chasm,spicerack,cleave,sift,umbra,drift,echolith,fuzzboy,hot-potato,makeitloud}-{windows,macos,linux}"
           merge-multiple: true
 
       - name: Stage installers into one flat dist/
