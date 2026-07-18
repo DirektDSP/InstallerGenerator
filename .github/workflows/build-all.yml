@@ -79,6 +79,57 @@ jobs:
       PLUGIN_CONFIG_B64: ${{ secrets.SPICERACK_CONFIG_B64 }}
       MACOS_INSTALLER_SIGN_IDENTITY: ${{ secrets.MACOS_INSTALLER_SIGN_IDENTITY }}
 
+  # 2026 spectral lineup (Moonbase-licensed).
+  cleave:
+    uses: ./.github/workflows/build-plugin.yml
+    with:
+      plugin: cleave
+      level: ${{ github.event_name == 'schedule' && 'full' || inputs.level || 'validate' }}
+    secrets:
+      PAT: ${{ secrets.PAT }}
+      PLUGIN_CONFIG_B64: ${{ secrets.CLEAVE_CONFIG_B64 }}
+      MACOS_INSTALLER_SIGN_IDENTITY: ${{ secrets.MACOS_INSTALLER_SIGN_IDENTITY }}
+
+  sift:
+    uses: ./.github/workflows/build-plugin.yml
+    with:
+      plugin: sift
+      level: ${{ github.event_name == 'schedule' && 'full' || inputs.level || 'validate' }}
+    secrets:
+      PAT: ${{ secrets.PAT }}
+      PLUGIN_CONFIG_B64: ${{ secrets.SIFT_CONFIG_B64 }}
+      MACOS_INSTALLER_SIGN_IDENTITY: ${{ secrets.MACOS_INSTALLER_SIGN_IDENTITY }}
+
+  umbra:
+    uses: ./.github/workflows/build-plugin.yml
+    with:
+      plugin: umbra
+      level: ${{ github.event_name == 'schedule' && 'full' || inputs.level || 'validate' }}
+    secrets:
+      PAT: ${{ secrets.PAT }}
+      PLUGIN_CONFIG_B64: ${{ secrets.UMBRA_CONFIG_B64 }}
+      MACOS_INSTALLER_SIGN_IDENTITY: ${{ secrets.MACOS_INSTALLER_SIGN_IDENTITY }}
+
+  drift:
+    uses: ./.github/workflows/build-plugin.yml
+    with:
+      plugin: drift
+      level: ${{ github.event_name == 'schedule' && 'full' || inputs.level || 'validate' }}
+    secrets:
+      PAT: ${{ secrets.PAT }}
+      PLUGIN_CONFIG_B64: ${{ secrets.DRIFT_CONFIG_B64 }}
+      MACOS_INSTALLER_SIGN_IDENTITY: ${{ secrets.MACOS_INSTALLER_SIGN_IDENTITY }}
+
+  echolith:
+    uses: ./.github/workflows/build-plugin.yml
+    with:
+      plugin: echolith
+      level: ${{ github.event_name == 'schedule' && 'full' || inputs.level || 'validate' }}
+    secrets:
+      PAT: ${{ secrets.PAT }}
+      PLUGIN_CONFIG_B64: ${{ secrets.ECHOLITH_CONFIG_B64 }}
+      MACOS_INSTALLER_SIGN_IDENTITY: ${{ secrets.MACOS_INSTALLER_SIGN_IDENTITY }}
+
   # Free / no-Moonbase plugins — no PLUGIN_CONFIG_B64 secret to pass.
   fuzzboy:
     uses: ./.github/workflows/build-plugin.yml
@@ -109,7 +160,7 @@ jobs:
 
   # ---- aggregate: release binaries, build catalog + site, deploy Pages ------
   publish:
-    needs: [polygraph, churn, chasm, spicerack, fuzzboy, hot-potato, makeitloud]
+    needs: [polygraph, churn, chasm, spicerack, cleave, sift, umbra, drift, echolith, fuzzboy, hot-potato, makeitloud]
     # Publish whatever succeeded; a single failing plugin should not sink the
     # rest of the catalog.
     if: ${{ always() }}
