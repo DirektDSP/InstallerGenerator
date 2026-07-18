@@ -131,6 +131,16 @@ jobs:
           path: PluginTemplate
           submodules: recursive
           token: ${{ secrets.PAT }}
+      # Shared GUI base (look/ + display/DirektCurveEditor) — the spectral lineup
+      # resolves ../DirektDSP_GUI as a sibling; cheap no-op for plugins that
+      # don't reference it, so it rides the same gate as PluginTemplate.
+      - name: Clone DirektDSP_GUI (sibling, if required)
+        if: needs.manifest.outputs.needs_plugin_template == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ needs.manifest.outputs.company_name }}/DirektDSP_GUI
+          path: DirektDSP_GUI
+          token: ${{ secrets.PAT }}
       - name: Install deps
         run: |
           sudo apt-get update
@@ -257,6 +267,16 @@ jobs:
           path: PluginTemplate
           submodules: recursive
           token: ${{ secrets.PAT }}
+      # Shared GUI base (look/ + display/DirektCurveEditor) — the spectral lineup
+      # resolves ../DirektDSP_GUI as a sibling; cheap no-op for plugins that
+      # don't reference it, so it rides the same gate as PluginTemplate.
+      - name: Clone DirektDSP_GUI (sibling, if required)
+        if: needs.manifest.outputs.needs_plugin_template == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ needs.manifest.outputs.company_name }}/DirektDSP_GUI
+          path: DirektDSP_GUI
+          token: ${{ secrets.PAT }}
       - name: Install deps
         run: |
           sudo apt-get update
@@ -367,6 +387,16 @@ jobs:
           repository: ${{ needs.manifest.outputs.company_name }}/PluginTemplate
           path: PluginTemplate
           submodules: recursive
+          token: ${{ secrets.PAT }}
+      # Shared GUI base (look/ + display/DirektCurveEditor) — the spectral lineup
+      # resolves ../DirektDSP_GUI as a sibling; cheap no-op for plugins that
+      # don't reference it, so it rides the same gate as PluginTemplate.
+      - name: Clone DirektDSP_GUI (sibling, if required)
+        if: needs.manifest.outputs.needs_plugin_template == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ needs.manifest.outputs.company_name }}/DirektDSP_GUI
+          path: DirektDSP_GUI
           token: ${{ secrets.PAT }}
       - name: Recreate moonbase config
         # secrets.* is NOT available in step-level if:, so gate inside the script.
@@ -504,6 +534,16 @@ jobs:
           repository: ${{ needs.manifest.outputs.company_name }}/PluginTemplate
           path: PluginTemplate
           submodules: recursive
+          token: ${{ secrets.PAT }}
+      # Shared GUI base (look/ + display/DirektCurveEditor) — the spectral lineup
+      # resolves ../DirektDSP_GUI as a sibling; cheap no-op for plugins that
+      # don't reference it, so it rides the same gate as PluginTemplate.
+      - name: Clone DirektDSP_GUI (sibling, if required)
+        if: needs.manifest.outputs.needs_plugin_template == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ needs.manifest.outputs.company_name }}/DirektDSP_GUI
+          path: DirektDSP_GUI
           token: ${{ secrets.PAT }}
       - name: Install deps
         run: brew install ninja jq
@@ -858,6 +898,16 @@ jobs:
           path: PluginTemplate
           submodules: recursive
           token: ${{ secrets.PAT }}
+      # Shared GUI base (look/ + display/DirektCurveEditor) — the spectral lineup
+      # resolves ../DirektDSP_GUI as a sibling; cheap no-op for plugins that
+      # don't reference it, so it rides the same gate as PluginTemplate.
+      - name: Clone DirektDSP_GUI (sibling, if required)
+        if: needs.manifest.outputs.needs_plugin_template == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ needs.manifest.outputs.company_name }}/DirektDSP_GUI
+          path: DirektDSP_GUI
+          token: ${{ secrets.PAT }}
       - name: Probe for sanitizer support
         id: probe
         env:
@@ -972,6 +1022,16 @@ jobs:
           path: PluginTemplate
           submodules: recursive
           token: ${{ secrets.PAT }}
+      # Shared GUI base (look/ + display/DirektCurveEditor) — the spectral lineup
+      # resolves ../DirektDSP_GUI as a sibling; cheap no-op for plugins that
+      # don't reference it, so it rides the same gate as PluginTemplate.
+      - name: Clone DirektDSP_GUI (sibling, if required)
+        if: needs.manifest.outputs.needs_plugin_template == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ needs.manifest.outputs.company_name }}/DirektDSP_GUI
+          path: DirektDSP_GUI
+          token: ${{ secrets.PAT }}
       - name: Install deps
         run: |
           sudo apt-get update
@@ -1054,6 +1114,16 @@ jobs:
           repository: ${{ needs.manifest.outputs.company_name }}/PluginTemplate
           path: PluginTemplate
           submodules: recursive
+          token: ${{ secrets.PAT }}
+      # Shared GUI base (look/ + display/DirektCurveEditor) — the spectral lineup
+      # resolves ../DirektDSP_GUI as a sibling; cheap no-op for plugins that
+      # don't reference it, so it rides the same gate as PluginTemplate.
+      - name: Clone DirektDSP_GUI (sibling, if required)
+        if: needs.manifest.outputs.needs_plugin_template == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ needs.manifest.outputs.company_name }}/DirektDSP_GUI
+          path: DirektDSP_GUI
           token: ${{ secrets.PAT }}
       - name: Install deps
         run: |
