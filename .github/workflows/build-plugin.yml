@@ -231,10 +231,12 @@ jobs:
   build-linux:
     needs: [manifest, lint, build-manual]
     # Run whenever the manifest resolved, tolerating skipped quality jobs
-    # (level=build) and a failed manual (installer ships without the PDF).
+    # (level=build), a failed manual (installer ships without the PDF), and a
+    # failed lint — lint is advisory; a spelling/format finding must not sink
+    # installers or the quality suite (same philosophy as publish).
     if: >-
       always() && needs.manifest.result == 'success' &&
-      (needs.lint.result == 'success' || needs.lint.result == 'skipped')
+      needs.lint.result != 'cancelled'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -345,7 +347,7 @@ jobs:
     needs: [manifest, lint, build-manual]
     if: >-
       always() && needs.manifest.result == 'success' &&
-      (needs.lint.result == 'success' || needs.lint.result == 'skipped')
+      needs.lint.result != 'cancelled'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -482,7 +484,7 @@ jobs:
     needs: [manifest, lint, build-manual]
     if: >-
       always() && needs.manifest.result == 'success' &&
-      (needs.lint.result == 'success' || needs.lint.result == 'skipped')
+      needs.lint.result != 'cancelled'
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
@@ -828,7 +830,7 @@ jobs:
       always() && needs.manifest.outputs.level == 'full' &&
       needs.manifest.outputs.has_tests == 'true' &&
       needs.manifest.outputs.sanitizer_flag != '' &&
-      (needs.lint.result == 'success' || needs.lint.result == 'skipped')
+      needs.lint.result != 'cancelled'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -946,7 +948,7 @@ jobs:
     if: >-
       always() && needs.manifest.outputs.level == 'full' &&
       needs.manifest.outputs.has_tests == 'true' &&
-      (needs.lint.result == 'success' || needs.lint.result == 'skipped')
+      needs.lint.result != 'cancelled'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -1029,7 +1031,7 @@ jobs:
     if: >-
       always() && needs.manifest.outputs.level == 'full' &&
       needs.manifest.outputs.has_tests == 'true' &&
-      (needs.lint.result == 'success' || needs.lint.result == 'skipped')
+      needs.lint.result != 'cancelled'
     runs-on: ubuntu-latest
     defaults:
       run:
