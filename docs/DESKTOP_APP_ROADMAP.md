@@ -1,12 +1,44 @@
-# DirektDSP Installer — Desktop App Roadmap
+# MyDirekt — Desktop App Roadmap
 
-> Status: planning. This document is the north star for the cross-platform desktop
-> **download + install manager** (Ninite-style multi-select) that consumes this
-> repo's `catalog.json`, with room for Moonbase-backed bulk licensing later.
+> This document is the north star for MyDirekt, the cross-platform desktop
+> **download + install manager** (Ninite-style multi-select) that consumes
+> DirektDSP's `catalog.json`, with room for Moonbase-backed bulk licensing later.
 >
-> **The app lives in a separate private repo** — this file stays here because the
-> *contract* (`catalog.json` + schema) it depends on is owned here. See
-> "Repo layout" below.
+> The **contract** it depends on (`catalog.json` + schema) is owned by the public
+> InstallerGenerator repo; a copy of this roadmap lives there too.
+
+## Current status (as of last work session)
+
+Phases 1–3 are **built**. The full pipeline — select → download (parallel) →
+verify SHA256 → install (serial) — is implemented for all three OSes, with
+per-plugin progress in the UI. 15 Rust unit tests pass; `cargo check` and the
+frontend build are clean.
+
+| Phase | State | Notes |
+|---|---|---|
+| 1 — Contract (`install_hints`) | ✅ done, in InstallerGenerator `main` | commit `822c269` |
+| 2 — App skeleton + picker UI | ✅ done | Tauri v2 + Vue 3 + TS + bun |
+| 3a — Parallel download + verify | ✅ done | reqwest/rustls + sha2, streaming verify |
+| 3b — Elevated serial install | ✅ code done, **needs real-OS execution testing** | Linux/macOS/Windows |
+| 4 — Moonbase bulk auth | ⬜ not started | needs Moonbase SDK/API details |
+| 5 — Web "Get the app" hero | ⬜ not started | in InstallerGenerator `gen_site.py` |
+
+**Blocked (not code):**
+- **CI matrix** (`.github/workflows/build.yml`) — blocked on **DirektDSP org
+  GitHub Actions billing** (jobs won't start). Clear billing, then
+  `gh workflow run build.yml` to produce Win/mac/Linux bundles.
+- **Real-OS execution tests** — Linux + macOS on owner's machines; Windows via
+  friends (needs a CI build first). Only the pure builders/parsers are unit-tested
+  so far; the actual elevated install exec on mac/Windows is unrun.
+
+**Resume here (suggested next steps):**
+1. Clear org Actions billing → run CI → hand a Windows build to testers.
+2. Test 3b Linux/macOS locally; fix anything flagged.
+3. Phase 5 web hero (fully doable without the app running).
+4. Phase 4 Moonbase — gather SDK/API shape first (Vue SDK, server-authoritative).
+
+**Toolchain (owner's WSL box):** rust 1.97.1, bun 1.3.14, webkit2gtk 2.52.5.
+Run the app: `bun run tauri dev` (kill any stale vite on :1420 first).
 
 ## Why a desktop app (and not a web "install all" button)
 
@@ -93,28 +125,75 @@ Emitted into `catalog.json` as `install_hints` (Phase 1):
   type), only for OSes with a published installer; `catalog_version` 1 → 2.
 - Verified: `tools/selftest.py` passes; hints emit + validate.
 
-### Phase 2 — Desktop app skeleton (Tauri, private repo)
-- New private repo (Tauri project). Rust backend + minimal webview frontend.
-- Frontend fetches the published `catalog.json` (same URL the site uses).
-- Render the plugin list with checkboxes, versions, sizes, format badges —
-  the same data the site cards show.
-- No install yet: just "select and see what would download".
-- **Prereq:** Rust toolchain (`rustup default stable`) + Node; Tauri CLI.
+### Phase 2 — Desktop app skeleton (Tauri) ✅ DONE
+- Tauri v2 + Vue 3 + TypeScript + Vite, package manager **bun**. Vue chosen for
+  Moonbase SDK compatibility (Vue or raw Node only). Identifier
+  `com.direktdsp.mydirekt`.
+- `src/catalog.ts` — TS types mirroring `catalog.schema.json` (v2) + `fetchCatalog()`
+  + `detectOs()`. Catalog URL defaults to the published Pages site, override with
+  `VITE_CATALOG_URL`. `install_hints` optional so a v1 catalog still parses.
+- `src/App.vue` — plugin picker: lists only plugins installable on the detected
+  OS, checkbox multi-select + select-all, version/size/format badges, live
+  per-plugin progress bar, selected-count + total-size bar.
 
-### Phase 3 — Download + install engine (Rust)
-- Rust: download selected installers, verify SHA256 against catalog, run the
-  per-OS silent invocation from `install_hints`, report progress to the webview.
-- Elevation: request admin/root once per session, not per plugin.
-- Handle partial failure (one plugin fails → others still install).
+### Phase 3 — Download + install engine (Rust) ✅ CODE DONE
 
-### Phase 4 — Moonbase bulk authentication (future)
+**Phase 3a — parallel download + verify** — `src-tauri/src/install.rs`
+- `download_and_verify` command: concurrent download via **reqwest** (rustls, no
+  OpenSSL sys-dep), streaming **sha2** verify against the catalog SHA256, progress
+  on the `install://progress` event channel. Mismatched download is deleted, never
+  cached. Per-item failure isolated; batch returns `DownloadResult[]`. Files cached
+  under the OS app-cache dir.
+- Frontend bridge: `src/install.ts` (`downloadAndVerify`, `onProgress`).
+
+**Phase 3b — elevated serial install** — one runner + two OS-gated batch modules
+- `src-tauri/src/runner.rs` — `install_verified` command. Groups items by type:
+  zip installs per-item; pkg and nsis each run as **one elevated batch** (single
+  prompt for the whole selection). Shared `push_batch` helper emits `install://run`
+  events + collects results; whole-batch failure (declined elevation) marks every
+  item in the batch failed. Order preserved.
+- **Linux** (in runner.rs, no elevation): extract the plugin zip, copy bundles to
+  `~/.vst3` / `~/.clap`. Path-traversal-safe (`enclosed_name()`), preserves the
+  exec bit on `.so`. Standalone + manual PDF skipped this phase.
+- **macOS** — `src-tauri/src/macos.rs`: build one shell script running each
+  `installer -pkg -target /` serially with `MYDIREKT <idx> OK|FAIL` markers, run
+  once via `osascript "... with administrator privileges"` (one admin prompt).
+- **Windows** — `src-tauri/src/windows.rs`: build one `.cmd` running each
+  `installer.exe /S` with `start /wait` (serial), launch once elevated via
+  PowerShell `Start-Process -Verb RunAs -Wait` (one UAC prompt). Markers written
+  to a result file the non-elevated parent reads (can't read child stdout across
+  UAC). Declined UAC / missing markers → failures.
+- All script builders + result parsers are **pure and unit-tested on any OS**;
+  only the actual elevation exec is `#[cfg(target_os = ...)]`-gated (hence
+  execution still needs testing on real mac/Windows).
+
+**Elevation model decision (recorded):** separate elevated helper subprocess, NOT
+a whole-app elevated manifest — UI stays at normal privilege. Two modes:
+  1. **Prompt each run** — ✅ implemented (the osascript / RunAs launches above).
+  2. **Persistent helper** — ⬜ later (Windows service / macOS `SMAppService` /
+     Linux polkit+systemd). Bigger security surface; the batch/parser split is
+     designed so this slots in behind the same interface.
+
+### Phase 4 — Moonbase bulk authentication ⬜ FUTURE
 - Optional login → Moonbase entitlement query (server-side) → default-check owned
   plugins. Client holds only an auth token. Never install-gated.
+- **Before starting:** gather the Moonbase SDK/API shape (it's Vue-or-Node only —
+  the Vue choice in Phase 2 was to keep this path open). Confirm the entitlement
+  endpoint + token flow.
 
-### Phase 5 — Web page updates (`gen_site.py`, this repo)
-- Add a hero: "Get the DirektDSP Installer app" (links to app releases).
+### Phase 5 — Web page updates (`gen_site.py`, InstallerGenerator repo) ⬜ TODO
+- Add a hero: "Get the MyDirekt app" (links to app releases).
 - Keep every per-plugin card + per-OS manual download button (the "still give
-  users the choice" requirement).
+  users the choice" requirement). Fully doable without the app running.
+
+## Distribution / CI
+
+`.github/workflows/build.yml` — matrix build (ubuntu/macos/windows) via
+`tauri-action`, uploads per-OS bundles as artifacts, on `workflow_dispatch` + `v*`
+tags. macOS builds **unsigned** on the GitHub-hosted runner for now; the
+signing/notarization env is stubbed (commented) so switching to the planned
+self-hosted notarization runner is a `runs-on` label change + adding Apple
+secrets. **Currently blocked on org Actions billing.**
 
 ## Open questions (defer until the phase that needs them)
 - App auto-update mechanism (Tauri updater vs. manual).
