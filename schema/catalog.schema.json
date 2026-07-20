@@ -17,6 +17,16 @@
     "plugins": {
       "type": "array",
       "items": { "$ref": "#/definitions/plugin" }
+    },
+    "install_hints": {
+      "type": "object",
+      "description": "Per-OS silent-install invocation for a desktop bulk-installer that orchestrates the existing native installers. Optional and advisory: derivable from installer type, emitted for convenience so the app needn't hardcode it.",
+      "additionalProperties": false,
+      "properties": {
+        "windows": { "$ref": "#/definitions/install_hint" },
+        "macos": { "$ref": "#/definitions/install_hint" },
+        "linux": { "$ref": "#/definitions/install_hint" }
+      }
     }
   },
   "definitions": {
@@ -65,6 +75,24 @@
         "url": { "type": "string" },
         "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
         "size": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "install_hint": {
+      "type": "object",
+      "required": ["installer_type", "command", "elevation"],
+      "additionalProperties": false,
+      "description": "How to run one OS's native installer unattended.",
+      "properties": {
+        "installer_type": { "enum": ["nsis", "pkg", "zip"] },
+        "command": {
+          "type": "array",
+          "description": "argv template. {installer} = the downloaded installer path; {dest} = target root (zip extraction only). Empty for zip (handled natively by the app).",
+          "items": { "type": "string" }
+        },
+        "elevation": {
+          "enum": ["admin", "root", "none"],
+          "description": "admin = Windows UAC; root = macOS sudo/authorization; none = user-writable."
+        }
       }
     }
   }

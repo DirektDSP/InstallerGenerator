@@ -31,6 +31,30 @@ from pathlib import Path
 
 import manifest as mf
 
+# How a desktop bulk-installer runs each OS's native installer unattended.
+# Advisory: emitted into catalog.json so the app needn't hardcode it. {installer}
+# is the downloaded installer path; {dest} the extraction root (zip only).
+#   windows: NSIS MUI silent switch (/S). App runs elevated (UAC once).
+#   macos:   flat-pkg install to the boot volume; needs root.
+#   linux:   raw-bundle zip — the app extracts + copies natively, no command.
+INSTALL_HINTS = {
+    "windows": {
+        "installer_type": "nsis",
+        "command": ["{installer}", "/S"],
+        "elevation": "admin",
+    },
+    "macos": {
+        "installer_type": "pkg",
+        "command": ["installer", "-pkg", "{installer}", "-target", "/"],
+        "elevation": "root",
+    },
+    "linux": {
+        "installer_type": "zip",
+        "command": [],
+        "elevation": "none",
+    },
+}
+
 # Where each format lands, per OS — mirrors the NSIS + pkg installers exactly.
 INSTALL_PATHS = {
     "windows": {
@@ -152,11 +176,22 @@ def build_catalog(names: list[str], artifacts_dir: Path, url_base: str,
         if entry:
             plugins.append(entry)
     plugins.sort(key=lambda p: p["name"].lower())
+
+    # Silent-install hints only for OSes some plugin actually ships an installer
+    # for — no dangling hint for a platform with nothing to install.
+    present_os = {os_key for p in plugins for os_key in p["installers"]}
+    install_hints = {
+        os_key: INSTALL_HINTS[os_key]
+        for os_key in ("windows", "macos", "linux")
+        if os_key in present_os
+    }
+
     return {
         "generated_at": generated_at,
         "publisher": "DirektDSP",
-        "catalog_version": "1",
+        "catalog_version": "2",
         "plugins": plugins,
+        "install_hints": install_hints,
     }
 
 
