@@ -9,7 +9,7 @@ name = "ChasmPro"
 ref  = ""
 
 [identity]
-product_name = "ChasmPro"
+product_name = "Chasm Pro"
 company_name = "DirektDSP"
 bundle_id    = "com.direktdsp.chasmpro"
 description  = "Diffusion and depth processor — Schroeder allpass smear, stereo tools, tone shaping and integrated saturation"
