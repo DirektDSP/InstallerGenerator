@@ -130,6 +130,26 @@ jobs:
       PLUGIN_CONFIG_B64: ${{ secrets.ECHOLITH_CONFIG_B64 }}
       MACOS_INSTALLER_SIGN_IDENTITY: ${{ secrets.MACOS_INSTALLER_SIGN_IDENTITY }}
 
+  sibyl:
+    uses: ./.github/workflows/build-plugin.yml
+    with:
+      plugin: sibyl
+      level: ${{ github.event_name == 'schedule' && 'full' || inputs.level || 'validate' }}
+    secrets:
+      PAT: ${{ secrets.PAT }}
+      PLUGIN_CONFIG_B64: ${{ secrets.SIBYL_CONFIG_B64 }}
+      MACOS_INSTALLER_SIGN_IDENTITY: ${{ secrets.MACOS_INSTALLER_SIGN_IDENTITY }}
+
+  chasmpro:
+    uses: ./.github/workflows/build-plugin.yml
+    with:
+      plugin: chasmpro
+      level: ${{ github.event_name == 'schedule' && 'full' || inputs.level || 'validate' }}
+    secrets:
+      PAT: ${{ secrets.PAT }}
+      PLUGIN_CONFIG_B64: ${{ secrets.CHASMPRO_CONFIG_B64 }}
+      MACOS_INSTALLER_SIGN_IDENTITY: ${{ secrets.MACOS_INSTALLER_SIGN_IDENTITY }}
+
   # Free / no-Moonbase plugins — no PLUGIN_CONFIG_B64 secret to pass.
   fuzzboy:
     uses: ./.github/workflows/build-plugin.yml
@@ -160,7 +180,7 @@ jobs:
 
   # ---- aggregate: release binaries, build catalog + site, deploy Pages ------
   publish:
-    needs: [polygraph, churn, chasm, spicerack, cleave, sift, umbra, drift, echolith, fuzzboy, hot-potato, makeitloud]
+    needs: [polygraph, churn, chasm, spicerack, cleave, sift, umbra, drift, echolith, sibyl, chasmpro, fuzzboy, hot-potato, makeitloud]
     # Publish whatever succeeded; a single failing plugin should not sink the
     # rest of the catalog.
     if: ${{ always() }}
@@ -181,7 +201,7 @@ jobs:
           # flaked out three runs in a row ("failed after 5 retries"), sinking
           # publish. Keep this brace list in sync when adding a plugin (same
           # place you add the call job above).
-          pattern: "{polygraph,churn,chasm,spicerack,cleave,sift,umbra,drift,echolith,fuzzboy,hot-potato,makeitloud}-{windows,macos,linux}"
+          pattern: "{polygraph,churn,chasm,spicerack,cleave,sift,umbra,drift,echolith,sibyl,chasmpro,fuzzboy,hot-potato,makeitloud}-{windows,macos,linux}"
           merge-multiple: true
 
       - name: Stage installers into one flat dist/
