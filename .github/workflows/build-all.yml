@@ -22,11 +22,11 @@ on:
         type: choice
         options: [build, validate, full]
         default: validate
-  # Weekly refresh of the download site against each plugin's default branch —
+  # Nightly refresh of the download site against each plugin's default branch —
   # scheduled runs use the full quality suite (sanitizers, coverage,
   # benchmarks, manuals) on top of validate's lint + pluginval + clapval.
   schedule:
-    - cron: "0 6 * * 1"
+    - cron: "0 6 * * *"
 
 permissions:
   contents: write        # create the aggregate release
