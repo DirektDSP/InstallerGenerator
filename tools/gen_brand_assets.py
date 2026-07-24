@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Render the generic DirektDSP installer brand assets from SVG source.
 
-Source SVGs live in templates/assets/src/ (brand palette: paper #F4EFE2,
-ink #1B1813, red #C8392B). This produces the committed, brand-neutral-to-any-
+Source SVGs live in templates/assets/src/ (black & white house palette:
+white #FFFFFF, black #000000). This produces the committed, brand-neutral-to-any-
 single-plugin house assets used as the fallback for every plugin that ships no
 art of its own:
 
@@ -76,11 +76,11 @@ def read_png_rgb(path: Path):
             s = x * channels
             r, g, bb = line[s], line[s + 1], line[s + 2]
             if channels == 4:
-                # composite over paper (#F4EFE2) using alpha
+                # composite over white (#FFFFFF) using alpha
                 al = line[s + 3]
-                r = (r * al + 0xF4 * (255 - al)) // 255
-                g = (g * al + 0xEF * (255 - al)) // 255
-                bb = (bb * al + 0xE2 * (255 - al)) // 255
+                r = (r * al + 0xFF * (255 - al)) // 255
+                g = (g * al + 0xFF * (255 - al)) // 255
+                bb = (bb * al + 0xFF * (255 - al)) // 255
             o = (y * w + x) * 3
             out[o], out[o + 1], out[o + 2] = r, g, bb
         prev = line
