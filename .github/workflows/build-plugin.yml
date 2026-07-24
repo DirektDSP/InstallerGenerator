@@ -179,8 +179,12 @@ jobs:
             -DCMAKE_BUILD_TYPE=Debug \
             -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
             ${DISABLE_FLAG:+-D${DISABLE_FLAG}=ON}
-          # Exclude UI + editor: they include BinaryData.h, which only exists
-          # after a real build (same workaround as the plugin-repo CIs).
+          # Generate BinaryData.h (juce_add_binary_data "Assets" target) so that
+          # non-UI TUs which transitively include it (PluginProcessor.cpp ->
+          # PluginEditor.h -> LookAndFeel.h -> BinaryData.h) parse under tidy.
+          # Best-effort: plugins without an Assets target just skip it.
+          cmake --build build-lint --target Assets >/dev/null 2>&1 || true
+          # Exclude UI + editor translation units themselves from analysis.
           find source -name "*.cpp" | grep -v "/UI/" | grep -v "PluginEditor" | \
             xargs -r clang-tidy \
               -p build-lint \
