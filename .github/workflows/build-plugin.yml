@@ -483,8 +483,43 @@ jobs:
           if [[ "${{ needs.manifest.outputs.ref }}" == v* ]]; then V="${{ needs.manifest.outputs.ref }}"; V="${V#v}";
           elif [ -f VERSION ]; then V="$(cat VERSION)"; else V="0.0.0"; fi
           echo "version=$V" >> "$GITHUB_OUTPUT"
+      # `choco install` exits 0 when the community feed is unreachable — it
+      # reports "Chocolatey installed 0/0 packages" and returns success. That
+      # turned a transient 503 into a green install step followed by
+      # makensis-action failing with "Unable to find makensis executable",
+      # which reads like a pathing bug and is not one. Retry the fetch, then
+      # assert the binary actually exists before moving on.
       - name: Install NSIS
-        run: choco install nsis --yes --no-progress
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $dirs = @("C:\Program Files (x86)\NSIS", "C:\Program Files\NSIS")
+
+          function Find-MakeNSIS {
+            foreach ($d in $dirs) {
+              $exe = Join-Path $d "makensis.exe"
+              if (Test-Path $exe) { return $d }
+            }
+            return $null
+          }
+
+          for ($i = 1; $i -le 3; $i++) {
+            if (Find-MakeNSIS) { break }
+            Write-Host "::group::choco install nsis (attempt $i/3)"
+            choco install nsis --yes --no-progress
+            Write-Host "::endgroup::"
+            if (Find-MakeNSIS) { break }
+            if ($i -lt 3) { Start-Sleep -Seconds (10 * $i) }
+          }
+
+          $found = Find-MakeNSIS
+          if (-not $found) {
+            throw "makensis.exe not found after 3 attempts. Chocolatey likely could not reach the package feed - check the group output above for a 5xx from community.chocolatey.org."
+          }
+          Write-Host "makensis.exe found in $found"
+          # makensis-action searches PATH first; make sure it is there regardless
+          # of whether choco's shim landed in this session's environment.
+          Add-Content -Path $env:GITHUB_PATH -Value $found
       - name: Build NSIS installer
         uses: joncloud/makensis-action@v4
         with:
