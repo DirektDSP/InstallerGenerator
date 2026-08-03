@@ -17,6 +17,14 @@ tagline      = "speak in tongues"
 trial_days   = 14
 website      = "https://direktdsp.com"
 
+# Factory preset bank. Categorised: assets/stock_presets/<Category>/<name>.ddsp,
+# and render_installer.py preserves that structure below assets/stock_presets/.
+# The installers write it to the machine-wide docs dir (Public Documents on
+# Windows, /Users/Shared on macOS); Sibyl's PresetManager::getFactoryDirectory()
+# reads exactly that path.
+[presets]
+source = "assets/stock_presets/*/*.ddsp"
+
 [formats]
 windows = ["VST3", "CLAP", "Standalone"]
 macos   = ["VST3", "AU", "CLAP", "Standalone"]

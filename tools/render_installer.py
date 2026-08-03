@@ -28,7 +28,7 @@ import re
 import shutil
 import sys
 import tempfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import manifest as mf
 
@@ -123,11 +123,31 @@ def write_tree(m: dict, plugin_dir: Path) -> list[Path]:
     if src_glob:
         dest_dir = pkg / "presets"
         dest_dir.mkdir(parents=True, exist_ok=True)
+
+        # Preserve any directory structure BELOW the fixed part of the glob, so a
+        # categorised bank (Sibyl: assets/stock_presets/<Category>/<name>.ddsp)
+        # survives staging instead of collapsing into one flat folder. The base
+        # is the longest wildcard-free prefix of the glob; for a flat pattern
+        # like "presets/*.pp" that leaves the relative path a bare filename, so
+        # existing plugins stage exactly as before.
+        base = plugin_dir
+        for part in PurePosixPath(src_glob).parts:
+            if any(ch in part for ch in "*?["):
+                break
+            base = base / part
+
         matches = sorted(plugin_dir.glob(src_glob))
         for src in matches:
-            if src.is_file():
-                shutil.copyfile(src, dest_dir / src.name)
-                written.append(dest_dir / src.name)
+            if not src.is_file():
+                continue
+            try:
+                rel = src.relative_to(base)
+            except ValueError:
+                rel = Path(src.name)
+            dest = dest_dir / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(src, dest)
+            written.append(dest)
         if not matches:
             print(f"  warn: preset glob matched nothing: {src_glob}", file=sys.stderr)
 
