@@ -17,6 +17,19 @@ COMPANY_NAME="${COMPANY_NAME:-DirektDSP}"
 # sub-package names still use PRODUCT_NAME. Defaults to PRODUCT_NAME when unset.
 PRODUCT_SLUG="${PRODUCT_SLUG:-${PRODUCT_NAME// /}}"
 
+# --- Signing / notarization (all optional; unset = unsigned build, as before) --
+# MACOS_SIGN_IDENTITY_APP        "Developer ID Application: Name (TEAMID)"
+# MACOS_INSTALLER_SIGN_IDENTITY  "Developer ID Installer: Name (TEAMID)"
+# NOTARY_KEY_PATH/KEY_ID/ISSUER_ID   App Store Connect API key for notarytool
+# MACOS_ENTITLEMENTS             plist applied to the Standalone .app only
+# See docs/SIGNING.md in the plugin repos for how these are produced.
+MACOS_SIGN_IDENTITY_APP="${MACOS_SIGN_IDENTITY_APP:-}"
+MACOS_INSTALLER_SIGN_IDENTITY="${MACOS_INSTALLER_SIGN_IDENTITY:-}"
+NOTARY_KEY_PATH="${NOTARY_KEY_PATH:-}"
+NOTARY_KEY_ID="${NOTARY_KEY_ID:-}"
+NOTARY_ISSUER_ID="${NOTARY_ISSUER_ID:-}"
+MACOS_ENTITLEMENTS="${MACOS_ENTITLEMENTS:-}"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKDIR="$(mktemp -d)"
 PKGS="$WORKDIR/pkgs"
@@ -58,6 +71,46 @@ apps=( "$ARTIFACTS_DIR"/*.app )
 if [[ ${#vst3s[@]} -ne 1 ]]; then
   echo "Expected exactly one .vst3 in $ARTIFACTS_DIR, got: ${vst3s[*]-}"
   exit 1
+fi
+
+# --- Code signing -------------------------------------------------------------
+# Runs before anything is staged into a component pkg: pkgbuild copies bundles
+# verbatim, so a bundle signed after staging would ship unsigned inside the pkg.
+sign_bundle() {
+  local target="$1"
+  local extra=()
+  # The Standalone opens an input device, so under the hardened runtime it needs
+  # the audio-input entitlement or macOS denies it the microphone. Plug-in
+  # formats never ask for one — the host owns the device.
+  if [[ "$target" == *.app && -n "$MACOS_ENTITLEMENTS" ]]; then
+    extra=(--entitlements "$MACOS_ENTITLEMENTS")
+  fi
+
+  # Inside-out: codesign seals a bundle around whatever it already contains, so
+  # signing the outer bundle first leaves nested binaries unsigned and
+  # notarization rejects the whole submission.
+  local nested
+  while IFS= read -r -d '' nested; do
+    codesign --force --sign "$MACOS_SIGN_IDENTITY_APP" \
+      --options runtime --timestamp "$nested"
+  done < <(find "$target" \( -name '*.framework' -o -name '*.dylib' -o -name '*.so' \) -print0 2>/dev/null)
+
+  # --options runtime is mandatory: notarization rejects anything built without
+  # the hardened runtime. --timestamp is what keeps already-shipped signatures
+  # valid after the certificate itself expires.
+  codesign --force --sign "$MACOS_SIGN_IDENTITY_APP" \
+    --options runtime --timestamp "${extra[@]+"${extra[@]}"}" "$target"
+  codesign --verify --strict --verbose=2 "$target"
+}
+
+if [[ -n "$MACOS_SIGN_IDENTITY_APP" ]]; then
+  echo "Signing bundles as: $MACOS_SIGN_IDENTITY_APP"
+  for bundle in "${vst3s[@]}" "${aus[@]}" "${claps[@]}" "${apps[@]}"; do
+    echo "  codesign $(basename "$bundle")"
+    sign_bundle "$bundle"
+  done
+else
+  echo "::warning::MACOS_SIGN_IDENTITY_APP unset — bundles will be unsigned and Gatekeeper will block them"
 fi
 
 stage_pkg() {
@@ -160,3 +213,33 @@ else
 fi
 
 echo "Built $OUT_PKG"
+
+# --- Notarization -------------------------------------------------------------
+# The .pkg is what gets submitted, not the individual bundles: one ticket covers
+# everything inside it, and stapling to the pkg is what makes the installer
+# validate on a machine with no network.
+if [[ -n "$NOTARY_KEY_PATH" && -n "$NOTARY_KEY_ID" && -n "$NOTARY_ISSUER_ID" ]]; then
+  if [[ -z "$MACOS_INSTALLER_SIGN_IDENTITY" ]]; then
+    echo "::error::Notarization requires a signed pkg — set MACOS_INSTALLER_SIGN_IDENTITY"
+    exit 1
+  fi
+
+  echo "Submitting $OUT_PKG to the notary service (this usually takes a couple of minutes)"
+  if ! xcrun notarytool submit "$OUT_PKG" \
+      --key "$NOTARY_KEY_PATH" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" \
+      --wait --timeout 30m; then
+    echo "::error::Notarization failed. Fetch the reason with:"
+    echo "  xcrun notarytool log <submission-id> --key <p8> --key-id <id> --issuer <uuid>"
+    exit 1
+  fi
+
+  xcrun stapler staple "$OUT_PKG"
+  xcrun stapler validate "$OUT_PKG"
+  # Gatekeeper's own verdict, as the installer daemon would see it
+  spctl --assess --type install --verbose=4 "$OUT_PKG"
+  echo "Notarized + stapled $OUT_PKG"
+elif [[ -n "$MACOS_INSTALLER_SIGN_IDENTITY" ]]; then
+  echo "::warning::pkg is signed but NOT notarized — Gatekeeper still blocks it on download"
+else
+  echo "::warning::pkg is unsigned and un-notarized — for local/dev use only"
+fi

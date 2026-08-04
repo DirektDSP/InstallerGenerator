@@ -44,40 +44,28 @@ jobs:
     with:
       plugin: polygraph
       level: ${{ github.event_name == 'schedule' && 'full' || inputs.level || 'validate' }}
-    secrets:
-      PAT: ${{ secrets.PAT }}
-      PLUGIN_CONFIG_B64: ${{ secrets.POLYGRAPH_CONFIG_B64 }}
-      MACOS_INSTALLER_SIGN_IDENTITY: ${{ secrets.MACOS_INSTALLER_SIGN_IDENTITY }}
+    secrets: inherit
 
   churn:
     uses: ./.github/workflows/build-plugin.yml
     with:
       plugin: churn
       level: ${{ github.event_name == 'schedule' && 'full' || inputs.level || 'validate' }}
-    secrets:
-      PAT: ${{ secrets.PAT }}
-      PLUGIN_CONFIG_B64: ${{ secrets.CHURN_CONFIG_B64 }}
-      MACOS_INSTALLER_SIGN_IDENTITY: ${{ secrets.MACOS_INSTALLER_SIGN_IDENTITY }}
+    secrets: inherit
 
   chasm:
     uses: ./.github/workflows/build-plugin.yml
     with:
       plugin: chasm
       level: ${{ github.event_name == 'schedule' && 'full' || inputs.level || 'validate' }}
-    secrets:
-      PAT: ${{ secrets.PAT }}
-      PLUGIN_CONFIG_B64: ${{ secrets.CHASM_CONFIG_B64 }}
-      MACOS_INSTALLER_SIGN_IDENTITY: ${{ secrets.MACOS_INSTALLER_SIGN_IDENTITY }}
+    secrets: inherit
 
   spicerack:
     uses: ./.github/workflows/build-plugin.yml
     with:
       plugin: spicerack
       level: ${{ github.event_name == 'schedule' && 'full' || inputs.level || 'validate' }}
-    secrets:
-      PAT: ${{ secrets.PAT }}
-      PLUGIN_CONFIG_B64: ${{ secrets.SPICERACK_CONFIG_B64 }}
-      MACOS_INSTALLER_SIGN_IDENTITY: ${{ secrets.MACOS_INSTALLER_SIGN_IDENTITY }}
+    secrets: inherit
 
   # 2026 spectral lineup (Moonbase-licensed).
   cleave:
@@ -85,70 +73,49 @@ jobs:
     with:
       plugin: cleave
       level: ${{ github.event_name == 'schedule' && 'full' || inputs.level || 'validate' }}
-    secrets:
-      PAT: ${{ secrets.PAT }}
-      PLUGIN_CONFIG_B64: ${{ secrets.CLEAVE_CONFIG_B64 }}
-      MACOS_INSTALLER_SIGN_IDENTITY: ${{ secrets.MACOS_INSTALLER_SIGN_IDENTITY }}
+    secrets: inherit
 
   sift:
     uses: ./.github/workflows/build-plugin.yml
     with:
       plugin: sift
       level: ${{ github.event_name == 'schedule' && 'full' || inputs.level || 'validate' }}
-    secrets:
-      PAT: ${{ secrets.PAT }}
-      PLUGIN_CONFIG_B64: ${{ secrets.SIFT_CONFIG_B64 }}
-      MACOS_INSTALLER_SIGN_IDENTITY: ${{ secrets.MACOS_INSTALLER_SIGN_IDENTITY }}
+    secrets: inherit
 
   umbra:
     uses: ./.github/workflows/build-plugin.yml
     with:
       plugin: umbra
       level: ${{ github.event_name == 'schedule' && 'full' || inputs.level || 'validate' }}
-    secrets:
-      PAT: ${{ secrets.PAT }}
-      PLUGIN_CONFIG_B64: ${{ secrets.UMBRA_CONFIG_B64 }}
-      MACOS_INSTALLER_SIGN_IDENTITY: ${{ secrets.MACOS_INSTALLER_SIGN_IDENTITY }}
+    secrets: inherit
 
   drift:
     uses: ./.github/workflows/build-plugin.yml
     with:
       plugin: drift
       level: ${{ github.event_name == 'schedule' && 'full' || inputs.level || 'validate' }}
-    secrets:
-      PAT: ${{ secrets.PAT }}
-      PLUGIN_CONFIG_B64: ${{ secrets.DRIFT_CONFIG_B64 }}
-      MACOS_INSTALLER_SIGN_IDENTITY: ${{ secrets.MACOS_INSTALLER_SIGN_IDENTITY }}
+    secrets: inherit
 
   echolith:
     uses: ./.github/workflows/build-plugin.yml
     with:
       plugin: echolith
       level: ${{ github.event_name == 'schedule' && 'full' || inputs.level || 'validate' }}
-    secrets:
-      PAT: ${{ secrets.PAT }}
-      PLUGIN_CONFIG_B64: ${{ secrets.ECHOLITH_CONFIG_B64 }}
-      MACOS_INSTALLER_SIGN_IDENTITY: ${{ secrets.MACOS_INSTALLER_SIGN_IDENTITY }}
+    secrets: inherit
 
   sibyl:
     uses: ./.github/workflows/build-plugin.yml
     with:
       plugin: sibyl
       level: ${{ github.event_name == 'schedule' && 'full' || inputs.level || 'validate' }}
-    secrets:
-      PAT: ${{ secrets.PAT }}
-      PLUGIN_CONFIG_B64: ${{ secrets.SIBYL_CONFIG_B64 }}
-      MACOS_INSTALLER_SIGN_IDENTITY: ${{ secrets.MACOS_INSTALLER_SIGN_IDENTITY }}
+    secrets: inherit
 
   chasmpro:
     uses: ./.github/workflows/build-plugin.yml
     with:
       plugin: chasmpro
       level: ${{ github.event_name == 'schedule' && 'full' || inputs.level || 'validate' }}
-    secrets:
-      PAT: ${{ secrets.PAT }}
-      PLUGIN_CONFIG_B64: ${{ secrets.CHASMPRO_CONFIG_B64 }}
-      MACOS_INSTALLER_SIGN_IDENTITY: ${{ secrets.MACOS_INSTALLER_SIGN_IDENTITY }}
+    secrets: inherit
 
   # Free / no-Moonbase plugins — no PLUGIN_CONFIG_B64 secret to pass.
   fuzzboy:
@@ -156,27 +123,21 @@ jobs:
     with:
       plugin: fuzzboy
       level: ${{ github.event_name == 'schedule' && 'full' || inputs.level || 'validate' }}
-    secrets:
-      PAT: ${{ secrets.PAT }}
-      MACOS_INSTALLER_SIGN_IDENTITY: ${{ secrets.MACOS_INSTALLER_SIGN_IDENTITY }}
+    secrets: inherit
 
   hot-potato:
     uses: ./.github/workflows/build-plugin.yml
     with:
       plugin: hot-potato
       level: ${{ github.event_name == 'schedule' && 'full' || inputs.level || 'validate' }}
-    secrets:
-      PAT: ${{ secrets.PAT }}
-      MACOS_INSTALLER_SIGN_IDENTITY: ${{ secrets.MACOS_INSTALLER_SIGN_IDENTITY }}
+    secrets: inherit
 
   makeitloud:
     uses: ./.github/workflows/build-plugin.yml
     with:
       plugin: makeitloud
       level: ${{ github.event_name == 'schedule' && 'full' || inputs.level || 'validate' }}
-    secrets:
-      PAT: ${{ secrets.PAT }}
-      MACOS_INSTALLER_SIGN_IDENTITY: ${{ secrets.MACOS_INSTALLER_SIGN_IDENTITY }}
+    secrets: inherit
 
   # ---- aggregate: release binaries, build catalog + site, deploy Pages ------
   publish:

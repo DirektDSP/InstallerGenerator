@@ -36,7 +36,7 @@ needs_plugin_template = false
 # Chasm has no per-plugin -D disable flag upstream; leave empty (Moonbase always
 # on for release builds — config injected from the secret below).
 disable_moonbase_flag = ""
-config_secret         = "CONFIG_JSON_B64"
+config_secret         = "CHASM_CONFIG_B64"
 
 [build.targets]
 VST3 = "Chasm_VST3"
