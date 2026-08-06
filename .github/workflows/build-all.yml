@@ -216,6 +216,17 @@ jobs:
             -o -name "*-Linux.zip" -o -name "*-Linux.zip.sha256" \
           \) -exec cp {} dist/ \;
           ls -la dist || true
+
+      # Drop unreleased plugins' installers before they reach the public release.
+      # State lives in plugins/<name>.toml [release] status; unflagged = embargoed.
+      # Must run BEFORE the upload step below.
+      - name: Enforce embargo (drop unreleased plugins' installers)
+        id: embargo
+        run: |
+          python3 tools/embargo.py --list
+          python3 tools/embargo.py --prune-dir dist
+          echo "--- dist after embargo ---"
+          ls -la dist || true
           COUNT=$(find dist -type f | wc -l)
           echo "count=$COUNT" >> "$GITHUB_OUTPUT"
 
@@ -227,7 +238,9 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Create / update aggregate GitHub Release (binary host)
-        if: steps.stage.outputs.count != '0'
+        # Post-embargo count: an all-embargoed run leaves dist/ empty, and dist/*
+        # would fail on the unmatched glob.
+        if: steps.embargo.outputs.count != '0'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

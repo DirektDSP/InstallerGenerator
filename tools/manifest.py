@@ -14,6 +14,11 @@ PLUGINS_DIR = REPO_ROOT / "plugins"
 # excluded (macOS App Store sandbox path only, not a flat-pkg payload).
 KNOWN_FORMATS = ["VST3", "AU", "CLAP", "Standalone"]
 
+# Publication state. Embargoed plugins still build in CI but stay off the public
+# site and out of the aggregate release. Unflagged defaults to hidden, not leaked.
+RELEASE_STATUSES = ["public", "embargoed"]
+DEFAULT_RELEASE_STATUS = "embargoed"
+
 
 class ManifestError(ValueError):
     pass
@@ -58,9 +63,29 @@ def load(name_or_path: str | Path) -> dict:
         raise ManifestError(f"{p}: VST3 is required on windows and macos")
     _require(build, "system", f"{p} [build]")
 
+    status = m.get("release", {}).get("status", DEFAULT_RELEASE_STATUS)
+    if status not in RELEASE_STATUSES:
+        raise ManifestError(
+            f"{p} [release]: unknown status '{status}' "
+            f"(known: {', '.join(RELEASE_STATUSES)})"
+        )
+
     m["_path"] = str(p)
     m["_slug"] = p.stem
+    m["_release_status"] = status
     return m
+
+
+def release_status(m: dict) -> str:
+    """"public" or "embargoed" — defaults to embargoed for an unflagged manifest."""
+    return m.get("_release_status") or m.get("release", {}).get(
+        "status", DEFAULT_RELEASE_STATUS
+    )
+
+
+def is_public(m: dict) -> bool:
+    """True iff this plugin may appear in catalog.json / the site / the release."""
+    return release_status(m) == "public"
 
 
 def website_label(website: str) -> str:

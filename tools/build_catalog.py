@@ -79,15 +79,23 @@ def sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def find_installer(artifacts_dir: Path, company: str, product: str, os_key: str):
-    """Return the first matching installer Path for a plugin+OS, or None."""
-    patterns = {
+def installer_patterns(company: str, product: str, os_key: str) -> list[str]:
+    """Glob patterns for one plugin's installer on one OS (`product` = space-free slug).
+
+    Shared with tools/embargo.py so pruning and cataloguing agree on file ownership.
+    The trailing '-' after the slug is what keeps "Chasm" from matching "ChasmPro".
+    """
+    return {
         "windows": [f"{company}-{product}-*-Windows.exe"],
         "macos": [f"{company}-{product}-*-macOS.pkg"],
         # Linux zips historically use either <Product>-<Version>- or -v<Version>-
         "linux": [f"{product}-*-Linux.zip"],
     }[os_key]
-    for pat in patterns:
+
+
+def find_installer(artifacts_dir: Path, company: str, product: str, os_key: str):
+    """Return the first matching installer Path for a plugin+OS, or None."""
+    for pat in installer_patterns(company, product, os_key):
         hits = sorted(artifacts_dir.rglob(pat))
         if hits:
             return hits[0]
@@ -172,6 +180,11 @@ def build_catalog(names: list[str], artifacts_dir: Path, url_base: str,
     plugins = []
     for name in names:
         m = mf.load(name)
+        # Embargo gate: keeps unreleased plugins out of the catalog, and so off the
+        # site. Binaries are pruned separately by tools/embargo.py.
+        if not mf.is_public(m):
+            print(f"  embargo {name}: not public, omitted from catalog", file=sys.stderr)
+            continue
         entry = build_plugin_entry(m, artifacts_dir, url_base)
         if entry:
             plugins.append(entry)

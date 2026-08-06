@@ -131,7 +131,48 @@ def main() -> int:
         check(not v.errors, "catalog validates against schema")
         for e in v.errors:
             print("      " + e)
-        check(len(catalog["plugins"]) == len(manifests), "all plugins present in catalog")
+
+        public = {n for n, m in manifests.items() if mf.is_public(m)}
+        embargoed = set(manifests) - public
+        check(len(catalog["plugins"]) == len(public),
+              f"every public plugin in catalog ({len(public)} public, "
+              f"{len(embargoed)} embargoed)")
+
+        print("\n[4b] embargo gate")
+        # The site renders only from the catalog, so absent here == absent there.
+        cat_slugs = {p["slug"] for p in catalog["plugins"]}
+        leaked = sorted(cat_slugs & embargoed)
+        check(not leaked, f"no embargoed plugin in catalog{': ' + ', '.join(leaked) if leaked else ''}")
+        check(cat_slugs == public, "catalog slugs == public manifests")
+
+        # An unflagged manifest must default to hidden, not exposed.
+        unflagged = {k: v for k, v in manifests[names[0]].items() if k != "release"}
+        unflagged.pop("_release_status", None)
+        check(not mf.is_public(unflagged), "manifest with no [release] flag defaults to embargoed")
+
+        # ...and the binaries must be pruned, not merely unlisted.
+        import embargo as emb  # noqa: PLC0415
+
+        def owner(filename: str) -> str | None:
+            """Which manifest does this synthetic artifact belong to?"""
+            for n, m in manifests.items():
+                s = mf.product_slug(m["identity"]["product_name"])
+                if f"-{s}-" in filename or filename.startswith(f"{s}-"):
+                    return n
+            return None
+
+        before = {p.name for p in art.iterdir()}
+        check(all(owner(n) for n in before), "every seeded artifact maps to a manifest")
+        emb.prune(art)
+        after = {p.name for p in art.iterdir()}
+
+        # One Windows + one macOS seeded per manifest, so the split is exact —
+        # catches over- and under-pruning alike.
+        check({owner(n) for n in after} == public,
+              "exactly the public plugins' installers survive the prune")
+        check({owner(n) for n in before - after} == embargoed,
+              "exactly the embargoed plugins' installers were pruned")
+        check(len(after) == 2 * len(public), f"{2 * len(public)} artifacts left")
 
         print("\n[5] site generation")
         r = subprocess.run(
