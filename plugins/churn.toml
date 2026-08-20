@@ -13,15 +13,17 @@ company_name = "DirektDSP"
 bundle_id    = "com.direktdsp.churn"
 # Was mislabelled "polyphonic guitar-to-MIDI plugin" in the copied NSIS script —
 # fixed here as the single source of truth.
-description  = "real-time interference laboratory — phaser, flanger, comb bank, and phase rotation in one engine"
-tagline      = "Churn — real-time interference laboratory. Phaser, flanger, comb bank, and phase rotation in one engine."
+description  = "modulation plugin — phaser, flanger, comb bank and phase rotation in two stackable FX engines"
+tagline      = "Churn — make your sounds seasick."
 trial_days   = 14
 website      = "https://direktdsp.com"
 
+# Standalone was removed from Churn's project.toml formats (285ef73), so it is
+# neither built nor distributed. Every other Churn surface reads VST3 / AU / CLAP.
 [formats]
-windows = ["VST3", "CLAP", "Standalone"]
-macos   = ["VST3", "AU", "CLAP", "Standalone"]
-linux   = ["VST3", "CLAP", "Standalone"]
+windows = ["VST3", "CLAP"]
+macos   = ["VST3", "AU", "CLAP"]
+linux   = ["VST3", "CLAP"]
 
 [build]
 system                = "cmake"
@@ -35,7 +37,6 @@ config_secret         = "CHURN_CONFIG_B64"
 VST3       = "Churn_VST3"
 CLAP       = "Churn_CLAP"
 AU         = "Churn_AU"
-Standalone = "Churn_Standalone"
 
 [assets]
 icon_ico    = "packaging/icon.ico"
