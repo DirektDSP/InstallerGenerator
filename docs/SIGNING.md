@@ -140,6 +140,28 @@ Record three values:
 
 ## Step 5 — Load everything into GitHub secrets
 
+### Fast path: one script
+
+`tools/macos_signing_secrets.sh` does this whole step. It reads the identity
+names out of the two `.p12` files (so they cannot be mistyped), checks each
+carries its private key, generates the keychain password, and uploads all ten
+organization secrets with `gh`:
+
+```sh
+gh auth refresh -h github.com -s admin:org     # once; org secrets need this scope
+tools/macos_signing_secrets.sh \
+  --app-p12 ~/certs/DeveloperIDApplication.p12 \
+  --installer-p12 ~/certs/DeveloperIDInstaller.p12 \
+  --notary-key ~/certs/AuthKey_XXXXXXXXXX.p8 \
+  --notary-key-id XXXXXXXXXX \
+  --notary-issuer <issuer UUID>
+```
+
+It prompts for the two export passwords. Add `--dry-run` to see what it would
+set. The manual equivalent follows.
+
+### Manual path
+
 Base64-encode the three binary files:
 
 ```sh

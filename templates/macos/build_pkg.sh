@@ -76,31 +76,63 @@ fi
 # --- Code signing -------------------------------------------------------------
 # Runs before anything is staged into a component pkg: pkgbuild copies bundles
 # verbatim, so a bundle signed after staging would ship unsigned inside the pkg.
+# A secure timestamp needs a real identity; the ad-hoc "-" identity (local
+# dry runs) has none, and codesign refuses the combination.
+SIGN_FLAGS=(--options runtime)
+if [[ "$MACOS_SIGN_IDENTITY_APP" != "-" ]]; then
+  SIGN_FLAGS+=(--timestamp)
+fi
+
 sign_bundle() {
   local target="$1"
   local extra=()
   # The Standalone opens an input device, so under the hardened runtime it needs
   # the audio-input entitlement or macOS denies it the microphone. Plug-in
-  # formats never ask for one — the host owns the device.
-  if [[ "$target" == *.app && -n "$MACOS_ENTITLEMENTS" ]]; then
-    extra=(--entitlements "$MACOS_ENTITLEMENTS")
+  # formats never ask for one — the host owns the device. The file is checked
+  # for existence, not just the variable: a plugin tree with a stale vendored
+  # packaging/ would otherwise fail codesign with an unhelpful error.
+  if [[ "$target" == *.app ]]; then
+    if [[ -n "$MACOS_ENTITLEMENTS" && -f "$MACOS_ENTITLEMENTS" ]]; then
+      extra=(--entitlements "$MACOS_ENTITLEMENTS")
+    elif [[ -n "$MACOS_ENTITLEMENTS" ]]; then
+      echo "::warning::MACOS_ENTITLEMENTS=$MACOS_ENTITLEMENTS does not exist; signing $(basename "$target") without entitlements"
+    fi
   fi
 
   # Inside-out: codesign seals a bundle around whatever it already contains, so
   # signing the outer bundle first leaves nested binaries unsigned and
-  # notarization rejects the whole submission.
+  # notarization rejects the whole submission. Everything that can carry code
+  # is covered — frameworks, dylibs, bundles, helper apps/XPC services and any
+  # extra Mach-O in Contents/MacOS (a shipped runtime such as ONNX Runtime
+  # arrives signed by its vendor and is re-signed with our identity here) —
+  # deepest paths first so a nested bundle's own contents are sealed before it.
+  local main_exe=""
+  if [[ -f "$target/Contents/Info.plist" ]]; then
+    main_exe="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$target/Contents/Info.plist" 2>/dev/null || true)"
+  fi
   local nested
-  while IFS= read -r -d '' nested; do
-    codesign --force --sign "$MACOS_SIGN_IDENTITY_APP" \
-      --options runtime --timestamp "$nested"
-  done < <(find "$target" \( -name '*.framework' -o -name '*.dylib' -o -name '*.so' \) -print0 2>/dev/null)
+  while IFS= read -r nested; do
+    [[ -n "$nested" ]] || continue
+    # Skip the bundle's own main executable: it is sealed with the bundle below.
+    [[ -n "$main_exe" && "$nested" == "$target/Contents/MacOS/$main_exe" ]] && continue
+    codesign --force --sign "$MACOS_SIGN_IDENTITY_APP" "${SIGN_FLAGS[@]}" "$nested"
+  done < <(
+    {
+      find "$target" -mindepth 1 \( -name '*.framework' -o -name '*.dylib' -o -name '*.so' \
+        -o -name '*.bundle' -o -name '*.app' -o -name '*.xpc' -o -name '*.appex' \) -print 2>/dev/null
+      # Loose Mach-O files next to the main executable (helpers, CLIs)
+      if [[ -d "$target/Contents/MacOS" ]]; then
+        find "$target/Contents/MacOS" -type f -perm -u+x -print 2>/dev/null
+      fi
+    } | awk '{ print gsub("/", "/") "\t" $0 }' | sort -rn -k1,1 | cut -f2- | awk '!seen[$0]++'
+  )
 
   # --options runtime is mandatory: notarization rejects anything built without
   # the hardened runtime. --timestamp is what keeps already-shipped signatures
   # valid after the certificate itself expires.
-  codesign --force --sign "$MACOS_SIGN_IDENTITY_APP" \
-    --options runtime --timestamp "${extra[@]+"${extra[@]}"}" "$target"
-  codesign --verify --strict --verbose=2 "$target"
+  codesign --force --sign "$MACOS_SIGN_IDENTITY_APP" "${SIGN_FLAGS[@]}" \
+    "${extra[@]+"${extra[@]}"}" "$target"
+  codesign --verify --strict --deep --verbose=2 "$target"
 }
 
 if [[ -n "$MACOS_SIGN_IDENTITY_APP" ]]; then
@@ -112,6 +144,62 @@ if [[ -n "$MACOS_SIGN_IDENTITY_APP" ]]; then
 else
   echo "::warning::MACOS_SIGN_IDENTITY_APP unset — bundles will be unsigned and Gatekeeper will block them"
 fi
+
+# ---------------------------------------------------------------------------
+# Clear stale per-user copies of the plug-in (postinstall scripts)
+#
+# Why: DAWs such as Ableton Live scan the *user* plug-in folders
+# (~/Library/Audio/Plug-Ins/{VST3,Components,CLAP}) in addition to /Library, and a
+# same-named bundle in the user folder shadows the system-wide one. A leftover
+# developer build there means users keep loading the stale copy even after
+# installing this pkg. Each format's component package therefore carries a
+# postinstall that removes ONLY the same-named bundle of its own format from the
+# console user's folder, so the /Library install is the only one. Nothing else is
+# deleted and nothing is written into the user folder. The script never fails the
+# install (always exit 0). Installer scripts run as root, so the console user's home
+# is resolved explicitly rather than trusting $HOME.
+# ---------------------------------------------------------------------------
+# $1 = format dir under Plug-Ins, $2 = bundle extension, $3 = "au" to also reset the AU cache.
+# Output: path of a scripts dir holding an executable "postinstall".
+# PRODUCT_NAME is embedded via printf %q so names with spaces/quotes stay one safe word.
+make_scripts() {
+  local kind="$1" fmtdir="$2" ext="$3"
+  local dir="$WORKDIR/scripts_${kind}"
+  rm -rf "$dir"; mkdir -p "$dir"
+  local bundle="${PRODUCT_NAME}.${ext}"
+  {
+    echo '#!/bin/bash'
+    echo '# Generated by InstallerGenerator build_pkg.sh. Removes a stale per-user copy that'
+    echo '# would shadow the /Library install in DAWs. Never fails the install.'
+    echo 'set -u'
+    printf 'bundle=%q\n' "$bundle"
+    printf 'fmtdir=%q\n' "$fmtdir"
+    cat <<'BODY'
+u=$(stat -f %Su /dev/console 2>/dev/null || true)
+if [ -z "$u" ] || [ "$u" = "root" ]; then u="${USER:-}"; fi
+if [ -z "$u" ] || [ "$u" = "root" ]; then
+  echo "postinstall: no console user, not clearing user-folder copy"
+  exit 0
+fi
+home=$(dscl . -read "/Users/$u" NFSHomeDirectory 2>/dev/null | awk '{print $2}')
+if [ -z "$home" ]; then home="/Users/$u"; fi
+target="$home/Library/Audio/Plug-Ins/$fmtdir/$bundle"
+if [ -e "$target" ] || [ -L "$target" ]; then
+  echo "postinstall: removing stale user copy: $target"
+  rm -rf "$target"
+else
+  echo "postinstall: no user copy at $target"
+fi
+BODY
+    if [[ "$kind" == "au" ]]; then
+      echo '# Make the AudioComponent cache pick up the new component.'
+      echo 'killall -9 AudioComponentRegistrar 2>/dev/null || true'
+    fi
+    echo 'exit 0'
+  } > "$dir/postinstall"
+  chmod 755 "$dir/postinstall"
+  printf '%s' "$dir"
+}
 
 stage_pkg() {
   local kind="$1" identifier="$2" outfile="$3"
@@ -132,8 +220,15 @@ stage_pkg() {
       cp -R "${apps[0]}" "$root/Applications/" ;;
     *) echo "Unknown kind: $kind"; exit 1 ;;
   esac
+  # Plug-in formats (not the app) get a postinstall that clears the user-folder copy.
+  local -a script_args=()
+  case "$kind" in
+    vst3) script_args=( --scripts "$(make_scripts vst3 VST3 vst3)" ) ;;
+    au)   script_args=( --scripts "$(make_scripts au Components component)" ) ;;
+    clap) script_args=( --scripts "$(make_scripts clap CLAP clap)" ) ;;
+  esac
   pkgbuild --root "$root" --identifier "$identifier" --version "$VERSION" --install-location / \
-    "$PKGS/$outfile"
+    ${script_args[@]+"${script_args[@]}"} "$PKGS/$outfile"
 }
 
 # Build a component pkg + accumulate an outline/choice/ref line only for the
@@ -183,6 +278,10 @@ if [[ -d "$PRESETS_SRC" ]] && compgen -G "$PRESETS_SRC/*" > /dev/null; then
   add_choice presets "${PRODUCT_NAME} Factory Presets" "Factory preset library (all users)." "${BUNDLE_ID}.presets" "${PRODUCT_NAME}.presets.pkg"
 fi
 
+# require-scripts: the vst3/au/clap component packages now carry postinstall scripts.
+# Component-package scripts are embedded by pkgbuild and run regardless of this
+# attribute, but it also tells Installer the product relies on scripting; the
+# default is true, so the previous explicit "false" is removed rather than inverted.
 DIST_OUT="$WORKDIR/Distribution.xml"
 cat > "$DIST_OUT" <<EOF
 <?xml version="1.0" encoding="utf-8"?>
@@ -193,7 +292,7 @@ cat > "$DIST_OUT" <<EOF
     </allowed-os-versions>
     <license file="EULA" mime-type="text/plain" />
     <readme file="README" mime-type="text/plain" />
-    <options customize="always" rootVolumeOnly="true" hostArchitectures="x86_64,arm64" require-scripts="false" />
+    <options customize="always" rootVolumeOnly="true" hostArchitectures="x86_64,arm64" />
     <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true" />
 
     <choices-outline>

@@ -2,7 +2,13 @@
 
 Tracking the remaining work on `feat/macos-signing-notarization` (PR #6).
 
-**Status as of 2026-08-06:** branch rebased onto `main` (head `ae289cf`, 0 behind /
+**Status as of 2026-10-18:** merged with `main` (postinstall user-folder cleanup),
+D12–D15 and B8 done, `tools/macos_signing_secrets.sh` added for B6; an ad-hoc dry
+run over the real Polygraph bundles (which carry a vendor-signed ONNX Runtime
+dylib) signs everything with the hardened runtime and builds the pkg. Only the
+Apple-account steps remain.
+
+**Earlier status (2026-08-06):** branch rebased onto `main` (head `ae289cf`, 0 behind /
 1 ahead), force-pushed, PR `MERGEABLE`, `tools/selftest.py` passing including
 main's embargo suite. The CI half is implemented and gated — with no secrets set
 the pipeline builds unsigned `.pkg`s exactly as before, and each tier switches on
@@ -19,16 +25,16 @@ See [`docs/SIGNING.md`](docs/SIGNING.md) for the full walkthrough of the manual 
 |---|---|---|---|---|
 | — | Rebase onto main, resolve embargo overlap, force-push PR #6 | — | — | done |
 | A1 | Apple Developer Program membership confirmed | — | — | done |
-| B8 | Verify `CHASM_CONFIG_B64` org secret name | 5m | — | ready |
-| D12 | `-f` guard on `MACOS_ENTITLEMENTS` | 30m | — | ready |
-| D13 | Notary all-or-nothing gate | 30m | — | ready |
-| D14 | Widen `sign_bundle` nested find | 30m | — | ready |
-| D15 | Selftest: assert entitlements staged | 30m | — | ready |
+| B8 | Verify `CHASM_CONFIG_B64` org secret name | 5m | — | done (repo secret exists) |
+| D12 | `-f` guard on `MACOS_ENTITLEMENTS` | 30m | — | done |
+| D13 | Notary all-or-nothing gate | 30m | — | done |
+| D14 | Widen `sign_bundle` nested find | 30m | — | done |
+| D15 | Selftest: assert entitlements staged | 30m | — | done |
 | A2 | Developer ID **Application** cert | 15m | A1 | needs Apple login |
 | A3 | Developer ID **Installer** cert | 15m | A1 | needs Apple login |
 | A5 | App Store Connect API key (`.p8`) | 15m | A1 | needs Apple login |
 | A4 | Export both `.p12` with private keys | 15m | A2, A3 | needs Apple login |
-| B6 | 10 organization secrets | 30m | A4, A5 | blocked |
+| B6 | 10 organization secrets (`tools/macos_signing_secrets.sh`) | 10m | A4, A5 | blocked |
 | B7 | Mirror into sops `org.yaml` | 15m | B6 | blocked |
 | C9 | Staged rollout: fuzzboy → standalone → chasm | ~3h | B6 | blocked |
 | C11 | Quarantined download test on a clean Mac | 30m | C9 | blocked |
@@ -41,32 +47,32 @@ D12–D15 should land before C9 so validation exercises the fixed code.
 
 ## Ready now — no Apple dependency
 
-- [ ] **B8 · Verify `CHASM_CONFIG_B64` exists as an org secret under that exact
+- [x] **B8 · Verify `CHASM_CONFIG_B64` exists as an org secret under that exact
       name.** The rename from `CONFIG_JSON_B64` survived the rebase, and
       `secrets: inherit` deleted the old explicit per-plugin mapping in
       `build-all.yml`. `build-plugin.yml` falls back to
       `secrets[needs.manifest.outputs.config_secret]`, so a wrong name means
       chasm's Moonbase config injection fails silently.
 
-- [ ] **D12 · Add an existence check to the entitlements guard.**
+- [x] **D12 · Add an existence check to the entitlements guard.**
       `templates/macos/build_pkg.sh:85` tests `MACOS_ENTITLEMENTS` for
       non-emptiness but not that the file exists, while
       `.github/workflows/build-plugin.yml:745` sets the path unconditionally. A
       plugin repo with a stale vendored `packaging/` fails `codesign` with a
       confusing error. Use `-f`.
 
-- [ ] **D13 · Make the notarization gate all-or-nothing.** `build_pkg.sh`
+- [x] **D13 · Make the notarization gate all-or-nothing.** `build_pkg.sh`
       notarizes only when all three `NOTARY_*` vars are set, but the smoke test
       hard-fails on `MACOS_NOTARY_KEY_P8 != ''` alone. Setting `KEY_P8` without
       `KEY_ID` / `ISSUER_ID` silently skips notarization and then fails
       `stapler validate`. Loud, but misleading — check the three together.
 
-- [ ] **D14 · Widen (or document) the nested-bundle signing find.**
+- [x] **D14 · Widen (or document) the nested-bundle signing find.**
       `sign_bundle` only finds `*.framework`, `*.dylib`, `*.so`. Correct for the
       current JUCE bundles; a future helper executable or nested `.app` would go
       unsigned and fail notarization for the whole submission.
 
-- [ ] **D15 · Assert the entitlements file is staged.** `tools/selftest.py` has
+- [x] **D15 · Assert the entitlements file is staged.** `tools/selftest.py` has
       no check that `render_installer.py` writes
       `packaging/macos/standalone.entitlements`.
 

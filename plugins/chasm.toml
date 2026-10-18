@@ -6,7 +6,8 @@ status = "public"
 
 [repo]
 name = "Chasm"
-ref  = ""
+# Pinned to the released tag — see churn.toml. Bump this when you tag.
+ref  = "v1.0.6"
 
 [identity]
 product_name = "Chasm"

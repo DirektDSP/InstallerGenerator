@@ -727,6 +727,10 @@ jobs:
             echo "No notary key configured — skipping notarization."
             exit 0
           fi
+          if [ -z "${{ secrets.MACOS_NOTARY_KEY_ID }}" ] || [ -z "${{ secrets.MACOS_NOTARY_ISSUER_ID }}" ]; then
+            echo "::error::MACOS_NOTARY_KEY_P8 is set but MACOS_NOTARY_KEY_ID / MACOS_NOTARY_ISSUER_ID are not — set all three"
+            exit 1
+          fi
           echo "$NOTARY_KEY" | base64 --decode > "$RUNNER_TEMP/notary.p8"
           chmod 600 "$RUNNER_TEMP/notary.p8"
           echo "path=$RUNNER_TEMP/notary.p8" >> "$GITHUB_OUTPUT"
@@ -754,7 +758,9 @@ jobs:
       - name: Smoke test + checksum
         env:
           EXPECT_SIGNED: ${{ secrets.MACOS_INSTALLER_SIGN_IDENTITY != '' }}
-          EXPECT_NOTARIZED: ${{ secrets.MACOS_NOTARY_KEY_P8 != '' }}
+          # All-or-nothing, matching build_pkg.sh: a partial notary config
+          # skips notarization there, so it must not demand a ticket here.
+          EXPECT_NOTARIZED: ${{ secrets.MACOS_NOTARY_KEY_P8 != '' && secrets.MACOS_NOTARY_KEY_ID != '' && secrets.MACOS_NOTARY_ISSUER_ID != '' }}
         run: |
           set -euo pipefail
           PKG=$(ls _artifacts/*-macOS.pkg | head -1)
