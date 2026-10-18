@@ -137,7 +137,9 @@ sign_bundle() {
 
 if [[ -n "$MACOS_SIGN_IDENTITY_APP" ]]; then
   echo "Signing bundles as: $MACOS_SIGN_IDENTITY_APP"
-  for bundle in "${vst3s[@]}" "${aus[@]}" "${claps[@]}" "${apps[@]}"; do
+  # Empty arrays (a plugin with no AU/CLAP/Standalone) trip `set -u` on the
+  # runner's bash 3.2 when expanded plainly; this form yields nothing instead.
+  for bundle in "${vst3s[@]}" ${aus[@]+"${aus[@]}"} ${claps[@]+"${claps[@]}"} ${apps[@]+"${apps[@]}"}; do
     echo "  codesign $(basename "$bundle")"
     sign_bundle "$bundle"
   done
