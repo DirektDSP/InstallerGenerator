@@ -82,6 +82,21 @@ def main() -> int:
     except Exception as e:  # noqa: BLE001
         check(False, f"synthetic presets render: {e}")
 
+    print("\n[2c] write_tree stages the shared macOS packaging files")
+    with tempfile.TemporaryDirectory() as tmp:
+        try:
+            written = ri.write_tree(manifests[names[0]], Path(tmp))
+            rel = {p.relative_to(Path(tmp) / "packaging").as_posix() for p in written}
+            for want in ("macos/build_pkg.sh", "macos/standalone.entitlements",
+                         "macos/resources/EULA", "macos/resources/README"):
+                check(want in rel and (Path(tmp) / "packaging" / want).is_file(),
+                      f"write_tree stages {want}")
+            ents = (Path(tmp) / "packaging" / "macos" / "standalone.entitlements").read_text()
+            check("com.apple.security.device.audio-input" in ents,
+                  "standalone.entitlements carries the audio-input entitlement")
+        except Exception as e:  # noqa: BLE001
+            check(False, f"write_tree: {e}")
+
     print("\n[3] Polygraph NSIS parity vs upstream")
     upstream = REPO.parent / "Polygraph" / "packaging" / "installer.nsi"
     if upstream.exists():

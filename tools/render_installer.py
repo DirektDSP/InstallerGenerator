@@ -9,6 +9,7 @@ this repo, or --plugin-dir):
     packaging/resources/README       (shared)
     packaging/macos/build_pkg.sh     (shared, format-adaptive)
     packaging/macos/resources/{EULA,README}
+    packaging/macos/standalone.entitlements  (shared, hardened runtime)
 
 Brand bitmaps (icon.ico/png, header.bmp, welcome.bmp) are expected to already
 exist in the plugin's packaging/ (Polygraph/Churn) — the renderer leaves them
@@ -115,6 +116,13 @@ def write_tree(m: dict, plugin_dir: Path) -> list[Path]:
     shutil.copyfile(TEMPLATES / "macos" / "build_pkg.sh", bpkg)
     bpkg.chmod(0o755)
     written.append(bpkg)
+
+    # Hardened-runtime entitlements for the Standalone .app. build_pkg.sh only
+    # applies them when MACOS_ENTITLEMENTS points here, so staging is harmless
+    # for plugins with no Standalone target.
+    ents = pkg / "macos" / "standalone.entitlements"
+    shutil.copyfile(TEMPLATES / "macos" / "standalone.entitlements", ents)
+    written.append(ents)
 
     # Stage factory presets (if declared) into packaging/presets/ so both the NSIS
     # SecPresets section and build_pkg.sh (which globs packaging/presets) find them.
