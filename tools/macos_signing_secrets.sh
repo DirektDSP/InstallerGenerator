@@ -13,7 +13,13 @@
 #     --notary-key ~/certs/AuthKey_ABCDE12345.p8 \
 #     --notary-key-id ABCDE12345 \
 #     --notary-issuer 12345678-1234-1234-1234-123456789abc \
-#     [--visibility all|private|selected] [--org DirektDSP] [--dry-run]
+#     [--visibility selected|private|all] [--repos InstallerGenerator,...] [--org DirektDSP] [--dry-run]
+#
+# Default visibility is "selected" with InstallerGenerator as the only repo:
+# it is the one workflow that signs (build-all.yml hands the secrets down with
+# `secrets: inherit`), and several org repos are public, so nothing else should
+# be able to read a certificate. GitHub cannot narrow an existing secret's
+# visibility without its value, so re-run this script to tighten one.
 #
 # Prompts for the two .p12 export passwords (not echoed). The identity strings
 # are read from the certificates themselves, so they cannot be mistyped.
@@ -21,7 +27,8 @@
 set -euo pipefail
 
 ORG="DirektDSP"
-VISIBILITY="all"
+VISIBILITY="selected"
+REPOS="InstallerGenerator"
 DRY_RUN=0
 APP_P12="" INSTALLER_P12="" NOTARY_KEY="" NOTARY_KEY_ID="" NOTARY_ISSUER=""
 
@@ -33,6 +40,7 @@ while [[ $# -gt 0 ]]; do
     --notary-key-id) NOTARY_KEY_ID="$2"; shift 2 ;;
     --notary-issuer) NOTARY_ISSUER="$2"; shift 2 ;;
     --visibility) VISIBILITY="$2"; shift 2 ;;
+    --repos) REPOS="$2"; shift 2 ;;
     --org) ORG="$2"; shift 2 ;;
     --dry-run) DRY_RUN=1; shift ;;
     -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
@@ -74,7 +82,13 @@ done
 
 KEYCHAIN_PW="$(openssl rand -base64 24)"
 
-echo "Organization: $ORG   visibility: $VISIBILITY"
+REPO_ARGS=()
+if [[ "$VISIBILITY" == "selected" ]]; then
+  [[ -n "$REPOS" ]] || { echo "--visibility selected needs --repos" >&2; exit 2; }
+  REPO_ARGS=(--repos "$REPOS")
+fi
+
+echo "Organization: $ORG   visibility: $VISIBILITY ${REPOS:+(repos: $REPOS)}"
 echo "  MACOS_SIGN_IDENTITY_APP        = $APP_ID"
 echo "  MACOS_INSTALLER_SIGN_IDENTITY  = $INSTALLER_ID"
 echo "  MACOS_NOTARY_KEY_ID            = $NOTARY_KEY_ID"
@@ -84,8 +98,8 @@ echo "    MACOS_NOTARY_KEY_P8, MACOS_KEYCHAIN_PASSWORD (random)"
 
 set_secret() {
   local name="$1" value="$2"
-  if [[ $DRY_RUN -eq 1 ]]; then echo "  [dry-run] gh secret set $name --org $ORG --visibility $VISIBILITY"; return; fi
-  printf '%s' "$value" | gh secret set "$name" --org "$ORG" --visibility "$VISIBILITY"
+  if [[ $DRY_RUN -eq 1 ]]; then echo "  [dry-run] gh secret set $name --org $ORG --visibility $VISIBILITY ${REPO_ARGS[*]-}"; return; fi
+  printf '%s' "$value" | gh secret set "$name" --org "$ORG" --visibility "$VISIBILITY" ${REPO_ARGS[@]+"${REPO_ARGS[@]}"}
 }
 
 set_secret MACOS_CERT_APPLICATION_P12      "$(base64 < "$APP_P12" | tr -d '\n')"
