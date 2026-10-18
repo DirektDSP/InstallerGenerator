@@ -158,7 +158,10 @@ tools/macos_signing_secrets.sh \
 ```
 
 It prompts for the two export passwords. Add `--dry-run` to see what it would
-set. The manual equivalent follows.
+set. By default the secrets are visible to **InstallerGenerator only**: it is
+the one workflow that signs, and several DirektDSP repos are public. Keep it
+that way; `--visibility all` would let any workflow in any org repo read the
+certificates. The manual equivalent follows.
 
 ### Manual path
 
