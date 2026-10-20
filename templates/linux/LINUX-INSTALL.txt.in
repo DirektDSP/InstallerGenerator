@@ -1,0 +1,39 @@
+@COMPANY_NAME@ @PRODUCT_NAME@ - Linux install notes
+==================================================
+
+This zip contains the VST3, the CLAP and the standalone application.
+
+VST3
+  Copy the @PRODUCT_NAME@.vst3 folder to ~/.vst3 (or /usr/lib/vst3). It carries
+  everything it needs inside the bundle.
+
+CLAP
+  Copy @PRODUCT_NAME@.clap to ~/.clap (or /usr/lib/clap) TOGETHER WITH these
+  files from the top level of this zip:
+
+    @RUNTIME_FILES@
+
+  The .clap looks for them in its own folder first. If they are missing,
+  @PRODUCT_NAME@ still loads, but without the features that need the runtime.
+
+Standalone
+  Run the standalone binary from this folder, or keep the same files next to
+  it wherever you move it.
+
+One shared copy instead
+  Rather than copying the runtime next to every .clap and binary, you can put
+  the files above in one of these folders (searched after the folder beside the
+  plugin):
+
+    /usr/lib/@SHARED_DIR@/
+    /usr/local/lib/@SHARED_DIR@/
+    ~/.local/lib/@SHARED_DIR@/
+
+  For example:
+
+    sudo mkdir -p /usr/lib/@SHARED_DIR@
+    sudo cp -r <the files above> /usr/lib/@SHARED_DIR@/
+
+The Licenses folder holds third-party notices for the runtime; keep it with it.
+
+@WEBSITE@

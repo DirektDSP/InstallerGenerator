@@ -91,6 +91,8 @@ jobs:
       windows_targets: ${{ steps.m.outputs.windows_targets }}
       macos_targets: ${{ steps.m.outputs.macos_targets }}
       linux_targets: ${{ steps.m.outputs.linux_targets }}
+      windows_runtime_files: ${{ steps.m.outputs.windows_runtime_files }}
+      linux_runtime_files: ${{ steps.m.outputs.linux_runtime_files }}
       level: ${{ steps.level.outputs.level }}
     steps:
       - name: Checkout generator
@@ -344,12 +346,35 @@ jobs:
           echo "version=$V" >> "$GITHUB_OUTPUT"
       - name: Collect artifacts
         working-directory: ${{ needs.manifest.outputs.repo_name }}
+        env:
+          RUNTIME_FILES: ${{ needs.manifest.outputs.linux_runtime_files }}
         run: |
           mkdir -p ../_artifacts/linux
           base="${{ needs.manifest.outputs.build_dir }}/${{ needs.manifest.outputs.artefacts_subdir }}/${{ env.BUILD_TYPE }}"
           [ -d "$base/VST3" ] && cp -r "$base/VST3/"*.vst3 ../_artifacts/linux/ || true
           [ -d "$base/CLAP" ] && cp -r "$base/CLAP/"*.clap ../_artifacts/linux/ || true
           [ -d "$base/Standalone" ] && cp -r "$base/Standalone/"* ../_artifacts/linux/ || true
+          # [runtime_files].linux: companions of the single-file formats (e.g. a
+          # shared library + Licenses). The plugin loader looks next to the module
+          # first, so they go in the same directory as the .clap and the standalone
+          # binary: the zip root. CLAP/ and Standalone/ normally hold identical
+          # copies; refuse to silently overwrite differing ones. A no-op for
+          # plugins without the table (RUNTIME_FILES is empty).
+          for dir in CLAP Standalone; do
+            [ -d "$base/$dir" ] || continue
+            for item in $RUNTIME_FILES; do
+              item="${item%/}"
+              if [ ! -e "$base/$dir/$item" ]; then
+                echo "::warning::runtime file '$item' not found in $base/$dir (neural/runtime features will be missing from this zip)"
+                continue
+              fi
+              if [ -e "../_artifacts/linux/$item" ] && ! diff -rq "$base/$dir/$item" "../_artifacts/linux/$item" > /dev/null; then
+                echo "::error::runtime file '$item' differs between CLAP/ and Standalone/; they must sit in one directory in the zip"
+                exit 1
+              fi
+              cp -rL "$base/$dir/$item" ../_artifacts/linux/
+            done
+          done
           ls -laR ../_artifacts/linux/
       - name: Upload raw plugin bundles (for validators)
         uses: actions/upload-artifact@v4
@@ -363,6 +388,11 @@ jobs:
         with:
           name: ${{ needs.manifest.outputs.slug }}-manual
           path: _artifacts/linux
+      - name: Linux install notes (plugins with runtime files)
+        if: needs.manifest.outputs.linux_runtime_files != ''
+        run: |
+          python3 _generator/tools/render_installer.py "${{ needs.manifest.outputs.slug }}" \
+            --linux-readme _artifacts/linux/LINUX-INSTALL.txt
       - name: Package Linux zip
         run: |
           cd _artifacts/linux
@@ -448,12 +478,33 @@ jobs:
       - name: Collect artifacts
         shell: bash
         working-directory: ${{ needs.manifest.outputs.repo_name }}
+        env:
+          RUNTIME_FILES: ${{ needs.manifest.outputs.windows_runtime_files }}
         run: |
           mkdir -p ../_artifacts/windows
           base="${{ needs.manifest.outputs.build_dir }}/${{ needs.manifest.outputs.artefacts_subdir }}/${{ env.BUILD_TYPE }}"
           [ -d "$base/VST3" ] && cp -r "$base/VST3/"*.vst3 ../_artifacts/windows/ || true
           [ -d "$base/CLAP" ] && cp "$base/CLAP/"*.clap ../_artifacts/windows/ || true
           [ -d "$base/Standalone" ] && cp "$base/Standalone/"*.exe ../_artifacts/windows/ || true
+          # [runtime_files].windows: companions that must sit beside the .clap and
+          # the standalone .exe (e.g. a DLL + Licenses). Staged in clap/ and
+          # standalone/ subfolders so the two copies can't collide; the NSIS
+          # template installs each next to its format. A no-op for plugins without
+          # the table (RUNTIME_FILES is empty).
+          for pair in CLAP:clap Standalone:standalone; do
+            src="$base/${pair%%:*}"
+            dst="../_artifacts/windows/${pair##*:}"
+            [ -d "$src" ] || continue
+            for item in $RUNTIME_FILES; do
+              item="${item%/}"
+              if [ -e "$src/$item" ]; then
+                mkdir -p "$dst"
+                cp -rL "$src/$item" "$dst/"
+              else
+                echo "::warning::runtime file '$item' not found in $src (the installer will skip it)"
+              fi
+            done
+          done
           ls -laR ../_artifacts/windows/
       - name: Upload raw plugin bundles (for validators)
         uses: actions/upload-artifact@v4

@@ -18,6 +18,7 @@ plugins that lack it (Chasm).
 
 Stdlib only. Usage:
     python3 tools/render_installer.py <name> [--plugin-dir DIR] [--check]
+    python3 tools/render_installer.py <name> --linux-readme PATH
 
 --check renders to a temp dir and asserts no @TOKEN@ survives (used by tests/CI
 without touching a real plugin checkout).
@@ -67,6 +68,41 @@ def _resolve_conditionals(text: str, enabled: set[str]) -> str:
     return "".join(out)
 
 
+# ;@RUNTIME install <clap|standalone>
+# ;@RUNTIME remove  <clap|standalone> "<install dir>"
+# Expands to one NSIS line per [runtime_files].windows entry (or to nothing when the
+# manifest has none, so such plugins render exactly as before). Files and
+# directories are staged by CI under ARTIFACTS_DIR\clap and ARTIFACTS_DIR\standalone.
+RUNTIME_RE = re.compile(r'^(\s*);@RUNTIME\s+(install|remove)\s+(clap|standalone)(?:\s+(".*"))?\s*$')
+
+
+def _expand_runtime(text: str, m: dict) -> str:
+    entries = [mf.runtime_entry(e) for e in mf.runtime_files(m, "windows")]
+    out: list[str] = []
+    for line in text.splitlines(keepends=True):
+        match = RUNTIME_RE.match(line.rstrip("\r\n"))
+        if not match:
+            out.append(line)
+            continue
+        indent, action, kind, dest = match.groups()
+        nl = "\n" if line.endswith("\n") else ""
+        if action == "remove" and not dest:
+            raise ValueError(";@RUNTIME remove needs a quoted install dir")
+        for name, is_dir in entries:
+            if action == "install":
+                # /nonfatal for both: an older plugin tag that predates the runtime
+                # copy must still build an installer (the CI collect step warns).
+                # Directories take /r (no trailing \*, so they land as a subdirectory
+                # of the same name); plain files stay non-recursive.
+                recurse = " /r" if is_dir else ""
+                out.append(f'{indent}File /nonfatal{recurse} "${{ARTIFACTS_DIR}}\\{kind}\\{name}"{nl}')
+            elif is_dir:
+                out.append(f'{indent}RMDir /r "{dest[1:-1]}\\{name}"{nl}')
+            else:
+                out.append(f'{indent}Delete "{dest[1:-1]}\\{name}"{nl}')
+    return "".join(out)
+
+
 def _substitute(text: str, tokens: dict[str, str]) -> str:
     def repl(match: re.Match) -> str:
         key = match.group(1)
@@ -87,10 +123,24 @@ def render_nsi(m: dict) -> str:
         enabled.add("PRESETS")
     text = _resolve_conditionals(src, enabled)
     text = _substitute(text, mf.nsis_tokens(m))
+    text = _expand_runtime(text, m)
     leftover = sorted(set(TOKEN_RE.findall(text)))
     if leftover:
         raise ValueError(
             f"unsubstituted tokens in rendered installer.nsi: "
+            f"{', '.join('@%s@' % t for t in leftover)}"
+        )
+    return text
+
+
+def render_linux_readme(m: dict) -> str:
+    """LINUX-INSTALL.txt for the Linux zip (only meaningful with [runtime_files].linux)."""
+    text = (TEMPLATES / "linux" / "LINUX-INSTALL.txt.in").read_text()
+    text = _substitute(text, mf.linux_tokens(m))
+    leftover = sorted(set(TOKEN_RE.findall(text)))
+    if leftover:
+        raise ValueError(
+            f"unsubstituted tokens in LINUX-INSTALL.txt: "
             f"{', '.join('@%s@' % t for t in leftover)}"
         )
     return text
@@ -174,11 +224,21 @@ def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description="Render installer tree from a manifest")
     ap.add_argument("name", help="plugin manifest name (e.g. polygraph)")
     ap.add_argument("--plugin-dir", help="cloned plugin working dir")
+    ap.add_argument("--linux-readme", metavar="PATH",
+                    help="write only LINUX-INSTALL.txt to PATH (for the Linux zip) and exit")
     ap.add_argument("--check", action="store_true",
                     help="render to a temp dir and validate only")
     args = ap.parse_args(argv)
 
     m = mf.load(args.name)
+
+    if args.linux_readme:
+        if not mf.runtime_files(m, "linux"):
+            print("error: manifest has no [runtime_files].linux; no README needed", file=sys.stderr)
+            return 1
+        Path(args.linux_readme).write_text(render_linux_readme(m))
+        print(f"Wrote {args.linux_readme}")
+        return 0
 
     if args.check:
         with tempfile.TemporaryDirectory() as tmp:
