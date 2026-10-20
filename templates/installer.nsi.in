@@ -27,6 +27,17 @@ RequestExecutionLevel admin
 Unicode True
 BrandingText "@COMPANY_NAME@ @PRODUCT_NAME@ ${VERSION}"
 
+; Authenticode signing of the installer and of the uninstaller it writes. CI
+; passes /DSIGN_PS1=<script> only when Windows signing is enabled (see
+; build-plugin.yml); without it this block is inert and the build is unsigned.
+!ifdef SIGN_PS1
+  !if ${NSIS_PACKEDVERSION} < 0x03008000
+    !error "Signing the uninstaller needs NSIS 3.08 or newer (!uninstfinalize)"
+  !endif
+  !finalize 'pwsh -NoProfile -File "${SIGN_PS1}" "%1"' = 0
+  !uninstfinalize 'pwsh -NoProfile -File "${SIGN_PS1}" "%1"' = 0
+!endif
+
 ;----------------------------------------------------------------------
 ; MUI2 Appearance
 ;----------------------------------------------------------------------
