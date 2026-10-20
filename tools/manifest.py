@@ -4,6 +4,7 @@ Stdlib only (tomllib, pathlib). Python 3.11+.
 """
 from __future__ import annotations
 
+import re
 import tomllib
 from pathlib import Path
 
@@ -18,6 +19,15 @@ KNOWN_FORMATS = ["VST3", "AU", "CLAP", "Standalone"]
 # site and out of the aggregate release. Unflagged defaults to hidden, not leaked.
 RELEASE_STATUSES = ["public", "embargoed"]
 DEFAULT_RELEASE_STATUS = "embargoed"
+
+
+# Per-OS runtime companions of the single-file formats (.clap / Standalone).
+# macOS is excluded on purpose: its bundles carry their own Frameworks/Resources.
+RUNTIME_FILE_OSES = ["windows", "linux"]
+# Bare names only: they are spliced into shell loops (workflow) and NSIS paths, so
+# no spaces, quotes, globs, separators or leading dots. A trailing "/" marks a
+# directory explicitly and is stripped for the name check.
+_RUNTIME_NAME_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._+-]*$")
 
 
 class ManifestError(ValueError):
@@ -63,6 +73,8 @@ def load(name_or_path: str | Path) -> dict:
         raise ManifestError(f"{p}: VST3 is required on windows and macos")
     _require(build, "system", f"{p} [build]")
 
+    m["_runtime_files"] = _validate_runtime_files(m.get("runtime_files", {}), str(p))
+
     status = m.get("release", {}).get("status", DEFAULT_RELEASE_STATUS)
     if status not in RELEASE_STATUSES:
         raise ManifestError(
@@ -74,6 +86,53 @@ def load(name_or_path: str | Path) -> dict:
     m["_slug"] = p.stem
     m["_release_status"] = status
     return m
+
+
+def _validate_runtime_files(table: dict, ctx: str) -> dict[str, list[str]]:
+    """Validate the optional [runtime_files] table -> {os: [entry, ...]}.
+
+    Each entry is a file or directory that sits beside the single-file formats
+    (CLAP/ and Standalone/ in the build artefacts dir). A trailing "/" marks a
+    directory explicitly; without it, an entry containing no "." is treated as a
+    directory (e.g. "Licenses") and everything else as a file.
+    """
+    if not isinstance(table, dict):
+        raise ManifestError(f"{ctx}: [runtime_files] must be a table")
+    out: dict[str, list[str]] = {}
+    for osname, entries in table.items():
+        if osname not in RUNTIME_FILE_OSES:
+            raise ManifestError(
+                f"{ctx} [runtime_files]: unknown key '{osname}' "
+                f"(known: {', '.join(RUNTIME_FILE_OSES)})"
+            )
+        if not isinstance(entries, list) or not all(isinstance(e, str) for e in entries):
+            raise ManifestError(f"{ctx} [runtime_files].{osname}: must be a list of strings")
+        seen: set[str] = set()
+        for e in entries:
+            name = e.rstrip("/")
+            if not _RUNTIME_NAME_RE.match(name) or name.endswith("."):
+                raise ManifestError(
+                    f"{ctx} [runtime_files].{osname}: bad entry {e!r} (a bare file or "
+                    f"directory name: letters, digits and . _ + - only, no paths or spaces)"
+                )
+            if name in seen:
+                raise ManifestError(f"{ctx} [runtime_files].{osname}: duplicate entry {e!r}")
+            seen.add(name)
+        out[osname] = list(entries)
+    return out
+
+
+def runtime_files(m: dict, osname: str) -> list[str]:
+    """Runtime companion entries for `osname`, as written in the manifest ([] if none)."""
+    if "_runtime_files" in m:
+        return list(m["_runtime_files"].get(osname, []))
+    return list(m.get("runtime_files", {}).get(osname, []))
+
+
+def runtime_entry(entry: str) -> tuple[str, bool]:
+    """(bare name, is_directory) for a [runtime_files] entry."""
+    name = entry.rstrip("/")
+    return name, entry.endswith("/") or "." not in name
 
 
 def release_status(m: dict) -> str:
@@ -111,4 +170,17 @@ def nsis_tokens(m: dict) -> dict[str, str]:
         "DESCRIPTION": ident["description"],
         "WEBSITE": ident["website"],
         "WEBSITE_LABEL": website_label(ident["website"]),
+    }
+
+
+def linux_tokens(m: dict) -> dict[str, str]:
+    """The @TOKEN@ -> value map for templates/linux/LINUX-INSTALL.txt.in."""
+    ident = m["identity"]
+    return {
+        "PRODUCT_NAME": ident["product_name"],
+        "COMPANY_NAME": ident["company_name"],
+        "WEBSITE": ident["website"],
+        # Shared per-vendor directory convention: /usr/lib/<company>/<product>/
+        "SHARED_DIR": f"{ident['company_name'].lower()}/{ident['product_name'].lower()}",
+        "RUNTIME_FILES": ", ".join(runtime_entry(e)[0] for e in runtime_files(m, "linux")),
     }

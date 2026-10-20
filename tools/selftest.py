@@ -82,6 +82,102 @@ def main() -> int:
     except Exception as e:  # noqa: BLE001
         check(False, f"synthetic presets render: {e}")
 
+    print("\n[2d] [runtime_files] -> NSIS sections / Linux notes / CI outputs")
+    try:
+        rt = {"windows": ["onnxruntime.dll", "Licenses"], "linux": ["libonnxruntime.so.1.23.2", "Licenses"]}
+        base = dict(manifests["polygraph"])
+        base.pop("runtime_files", None)
+        base["_runtime_files"] = {}
+        withrt = dict(base)
+        withrt["runtime_files"] = rt
+        withrt["_runtime_files"] = rt
+
+        # Without the table: every directive vanishes and the output is exactly
+        # the template with the ;@RUNTIME lines deleted (i.e. what rendered before).
+        src = (ri.TEMPLATES / "installer.nsi.in").read_text()
+        legacy = "".join(l for l in src.splitlines(keepends=True) if ";@RUNTIME" not in l)
+        for n, m in manifests.items():
+            if mf.runtime_files(m, "windows"):
+                continue
+            old_style = ri._substitute(
+                ri._resolve_conditionals(
+                    legacy,
+                    set(m["formats"]["windows"]) | ({"PRESETS"} if m.get("presets", {}).get("source") else set()),
+                ),
+                mf.nsis_tokens(m),
+            )
+            check(ri.render_nsi(m).encode() == old_style.encode(),
+                  f"{n} (no [runtime_files]) renders byte-identical to the pre-feature template")
+        check(ri.render_nsi(base) != ri.render_nsi(withrt), "runtime_files changes the render")
+        check(not mf.runtime_files(manifests["sift"], "windows"), "sift declares no runtime files")
+
+        nsi = ri.render_nsi(withrt)
+        for want in (
+            'File /nonfatal "${ARTIFACTS_DIR}\\clap\\onnxruntime.dll"',
+            'File /nonfatal /r "${ARTIFACTS_DIR}\\clap\\Licenses"',
+            'File /nonfatal "${ARTIFACTS_DIR}\\standalone\\onnxruntime.dll"',
+            'File /nonfatal /r "${ARTIFACTS_DIR}\\standalone\\Licenses"',
+            'Delete "$COMMONFILES64\\CLAP\\DirektDSP\\onnxruntime.dll"',
+            'RMDir /r "$COMMONFILES64\\CLAP\\DirektDSP\\Licenses"',
+            'Delete "$INSTDIR\\onnxruntime.dll"',
+            'RMDir /r "$INSTDIR\\Licenses"',
+        ):
+            check(want in nsi, f"NSIS has: {want}")
+        # Install lines must sit inside their section, uninstall lines before the RMDir.
+        lines = [l.strip() for l in nsi.splitlines()]
+        def idx(prefix, start=0):
+            return next(i for i in range(start, len(lines)) if lines[i].startswith(prefix))
+        clap0 = idx('Section "Polygraph CLAP"'); clap1 = idx("SectionEnd", clap0)
+        sa0 = idx('Section /o "Polygraph Standalone"'); sa1 = idx("SectionEnd", sa0)
+        check(clap0 < idx("File /nonfatal \"${ARTIFACTS_DIR}\\clap\\onnx", clap0) < clap1,
+              "CLAP runtime files installed inside the CLAP section")
+        check(sa0 < idx("File /nonfatal \"${ARTIFACTS_DIR}\\standalone\\onnx", sa0) < sa1,
+              "Standalone runtime files installed inside the Standalone section")
+        check(idx('RMDir /r "$COMMONFILES64\\CLAP') < idx('RMDir "$COMMONFILES64\\CLAP'),
+              "CLAP runtime dir removed before the CLAP folder RMDir")
+        check(idx('RMDir /r "$INSTDIR\\Licenses"') < idx('RMDir "$INSTDIR"'),
+              "Standalone runtime dir removed before the INSTDIR RMDir")
+        check("@RUNTIME" not in nsi, "no ;@RUNTIME marker survives in the rendered NSIS")
+
+        # No CLAP / Standalone format -> no runtime lines.
+        nof = dict(withrt)
+        nof["formats"] = {**withrt["formats"], "windows": ["VST3"]}
+        check("onnxruntime" not in ri.render_nsi(nof), "runtime lines follow the CLAP/Standalone gates")
+
+        # Linux notes + CI outputs.
+        txt = ri.render_linux_readme(withrt)
+        check("libonnxruntime.so.1.23.2, Licenses" in txt and "/usr/lib/direktdsp/polygraph/" in txt
+              and "@" not in txt, "LINUX-INSTALL.txt renders (runtime list + shared dir, no tokens)")
+        import manifest_ci as mci  # noqa: PLC0415
+        out = dict(l.split("=", 1) for l in mci.github_output("polygraph").splitlines())
+        check(out["windows_runtime_files"] == "onnxruntime.dll Licenses"
+              and out["linux_runtime_files"] == "libonnxruntime.so.1.23.2 Licenses",
+              "manifest_ci exposes windows_/linux_runtime_files for polygraph")
+        out = dict(l.split("=", 1) for l in mci.github_output("sift").splitlines())
+        check(out["windows_runtime_files"] == "" and out["linux_runtime_files"] == "",
+              "manifest_ci runtime outputs are empty for a plugin without the table")
+
+        # Validation.
+        for bad, label in (
+            ({"windows": ["../x.dll"]}, "path traversal"),
+            ({"windows": ["a b.dll"]}, "whitespace"),
+            ({"windows": ["*.dll"]}, "glob"),
+            ({"windows": ["x.dll", "x.dll"]}, "duplicate"),
+            ({"macos": ["x"]}, "unsupported OS key"),
+            ({"linux": "x"}, "non-list"),
+        ):
+            try:
+                mf._validate_runtime_files(bad, "t")
+                check(False, f"manifest rejects {label}")
+            except mf.ManifestError:
+                check(True, f"manifest rejects {label}")
+        check(mf.runtime_entry("Licenses") == ("Licenses", True)
+              and mf.runtime_entry("onnxruntime.dll") == ("onnxruntime.dll", False)
+              and mf.runtime_entry("data.d/") == ("data.d", True),
+              "runtime_entry classifies dirs vs files")
+    except Exception as e:  # noqa: BLE001
+        check(False, f"runtime_files checks: {e!r}")
+
     print("\n[2c] write_tree stages the shared macOS packaging files")
     with tempfile.TemporaryDirectory() as tmp:
         try:
@@ -100,7 +196,12 @@ def main() -> int:
     print("\n[3] Polygraph NSIS parity vs upstream")
     upstream = REPO.parent / "Polygraph" / "packaging" / "installer.nsi"
     if upstream.exists():
-        rendered = ri.render_nsi(manifests["polygraph"])
+        # The upstream script predates [runtime_files]; compare the base layout
+        # (the runtime lines are covered by [2d]).
+        pg = dict(manifests["polygraph"])
+        pg["_runtime_files"] = {}
+        pg["runtime_files"] = {}
+        rendered = ri.render_nsi(pg)
         up = functional_lines(upstream.read_text())
         rn = functional_lines(rendered)
         # Two intentional improvements over the hand-written upstream:

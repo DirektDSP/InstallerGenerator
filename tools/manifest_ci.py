@@ -7,7 +7,8 @@ Two modes:
       Emit key=value lines suitable for appending to $GITHUB_OUTPUT: repo_name,
       product_name, company_name, bundle_id, needs_plugin_template, build_dir,
       artefacts_subdir, disable_moonbase_flag, config_secret, ref, and per-OS
-      space-separated build target lists + cmake target-name lists.
+      space-separated build target lists + cmake target-name lists, and per-OS
+      space-separated [runtime_files] lists (empty when the plugin has none).
 
   matrix
       Emit a JSON array of manifest slugs for a fan-out matrix.
@@ -71,6 +72,11 @@ def github_output(name: str) -> str:
         "windows_targets": " ".join(_targets_for(m, "windows")),
         "macos_targets": " ".join(_targets_for(m, "macos")),
         "linux_targets": " ".join(_targets_for(m, "linux")),
+        # Extra files/dirs beside the single-file formats ([runtime_files]); empty
+        # for plugins without the table. Names are validated to contain no
+        # whitespace/quotes/globs, so space-separated is safe to loop over in bash.
+        "windows_runtime_files": " ".join(mf.runtime_files(m, "windows")),
+        "linux_runtime_files": " ".join(mf.runtime_files(m, "linux")),
     }
     return "".join(f"{k}={v}\n" for k, v in lines.items())
 

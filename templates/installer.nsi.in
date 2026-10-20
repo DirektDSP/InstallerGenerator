@@ -107,6 +107,7 @@ SectionEnd
 Section "@PRODUCT_NAME@ CLAP" SecCLAP
   SetOutPath "$COMMONFILES64\CLAP\@COMPANY_NAME@"
   File "${ARTIFACTS_DIR}\@PRODUCT_NAME@.clap"
+  ;@RUNTIME install clap
 SectionEnd
 ;@ENDIF
 
@@ -118,6 +119,7 @@ SectionEnd
 Section /o "@PRODUCT_NAME@ Standalone" SecStandalone
   SetOutPath "$INSTDIR"
   File "${ARTIFACTS_DIR}\@PRODUCT_NAME@.exe"
+  ;@RUNTIME install standalone
 SectionEnd
 ;@ENDIF
 
@@ -197,6 +199,7 @@ Section "Uninstall"
 ;@IF CLAP
   ; CLAP
   Delete "$COMMONFILES64\CLAP\@COMPANY_NAME@\@PRODUCT_NAME@.clap"
+  ;@RUNTIME remove clap "$COMMONFILES64\CLAP\@COMPANY_NAME@"
   RMDir "$COMMONFILES64\CLAP\@COMPANY_NAME@"
 ;@ENDIF
 
@@ -210,6 +213,7 @@ Section "Uninstall"
   ; Standalone + manual + uninstaller
 ;@IF Standalone
   Delete "$INSTDIR\@PRODUCT_NAME@.exe"
+  ;@RUNTIME remove standalone "$INSTDIR"
 ;@ENDIF
   Delete "$INSTDIR\@PRODUCT_NAME_LOWER@-manual.pdf"
   Delete "$INSTDIR\Uninstall-@PRODUCT_NAME@.exe"

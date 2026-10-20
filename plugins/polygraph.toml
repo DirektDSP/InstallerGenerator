@@ -35,6 +35,13 @@ CLAP       = "Polygraph_CLAP"
 AU         = "Polygraph_AU"
 Standalone = "Polygraph_Standalone"
 
+# ONNX Runtime ships beside the single-file formats (the .clap and the standalone
+# binary), so the neural engine isn't silently lost. The VST3 bundle already carries
+# it inside the bundle; macOS bundles carry it in Contents/Frameworks.
+[runtime_files]
+windows = ["onnxruntime.dll", "Licenses"]
+linux   = ["libonnxruntime.so.1.23.2", "Licenses"]
+
 [assets]
 icon_ico    = "packaging/icon.ico"
 icon_png    = "packaging/icon.png"
