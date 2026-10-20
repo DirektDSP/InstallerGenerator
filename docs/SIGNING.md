@@ -308,11 +308,64 @@ xcrun notarytool log <submission-id> \
 
 ## Windows
 
-Out of scope for the macOS work above, and still an open gap: the NSIS
-installer is unsigned, so SmartScreen shows *"Windows protected your PC"* on
-every download until the binary builds reputation.
+Unsigned Windows plugins are not just a SmartScreen warning. On Windows 11,
+**Smart App Control** refuses to load an unsigned DLL it has no cloud
+reputation for, so a host shows an error such as *"Polygraph.vst3 is either
+not designed to run on Windows or it contains an error. Error status
+0xc0e90002"* and the plugin never loads. Smart App Control is on by default on
+fresh Windows 11 installs. Authenticode signing with a publicly trusted
+certificate fixes it, and also removes the SmartScreen warning on the
+installer.
 
-The current cheap option is **Azure Trusted Signing** (~$10/month, no hardware
-token, but requires a verified organisation or 3 years of individual trading
-history). Traditional OV/EV certificates from a CA run $200–600/year and EV
-requires a hardware token, which does not work on hosted CI runners.
+**Route: SSL.com code signing with eSigner (cloud key).** Since June 2023 a
+code signing key cannot be exported to a file; it has to live in hardware or a
+cloud HSM, so CI needs a provider whose cloud signing runs on a GitHub runner.
+eSigner does, through SSL.com's CodeSignTool, which build-plugin.yml pins by
+version and SHA-256 (it bundles its own Java). Azure Artifact Signing is
+cheaper but takes individuals only in the USA and Canada, and organisations
+elsewhere.
+
+### What to buy and verify
+
+1. An OV (or IV, for an individual) **code signing certificate** from SSL.com,
+   1 year. The short term is deliberate while incorporation is open: the
+   certificate is reissued to a company if one is formed.
+2. The **eSigner** plan for it. Tier 1 is 240 signings a year. A release signs
+   five files: the VST3 binary, the .clap, the standalone .exe, the installer
+   and its uninstaller. Microsoft's onnxruntime.dll is already signed and is
+   skipped.
+3. Validation by SSL.com: photo ID and, for a business name, the CRO
+   business-name registration, a matching address and usually a phone call.
+4. In the eSigner dashboard, enable automation and copy the **TOTP secret**
+   (the text behind the QR code), and note the order's **signing credential
+   ID**.
+
+### Secrets
+
+```sh
+gh auth refresh -h github.com -s admin:org
+tools/windows_signing_secrets.sh             # --sandbox first, to try a free eSigner sandbox account
+```
+
+The script prompts for the four values and stores `WINDOWS_ESIGNER_USERNAME`,
+`WINDOWS_ESIGNER_PASSWORD`, `WINDOWS_ESIGNER_CREDENTIAL_ID` and
+`WINDOWS_ESIGNER_TOTP_SECRET` as organisation secrets visible to
+InstallerGenerator only (plus `WINDOWS_ESIGNER_ENVIRONMENT=TEST` with
+`--sandbox`).
+
+### What CI does with them
+
+Signing runs only when a build asks for it (`sign_windows: true`) and all four
+secrets exist. The nightly build-all never asks, so it cannot spend the yearly
+signings; Polygraph's release job asks for every release tag. When signing is
+on:
+
+- every PE file in the Windows artefacts is signed before validation and
+  packaging (files that already carry a valid signature are left alone);
+- NSIS signs the installer and the uninstaller it writes (`!finalize` and
+  `!uninstfinalize`, which need NSIS 3.08 or newer);
+- the smoke test installs the result and fails the build if the installer, the
+  uninstaller or any installed binary is unsigned.
+
+Without signing the build is unchanged apart from a warning that Smart App
+Control will block the plugins.

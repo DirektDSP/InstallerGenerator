@@ -210,7 +210,17 @@ def main() -> int:
         #     strip that prefix before comparing so any OTHER drift still fails.
         def norm(lines):
             out = []
+            depth = 0  # inside the !ifdef SIGN_PS1 signing block (newer than upstream)
             for l in lines:
+                if depth == 0 and l.startswith("!ifdef SIGN_PS1"):
+                    depth = 1
+                    continue
+                if depth:
+                    if l.startswith("!if"):
+                        depth += 1
+                    elif l.startswith("!endif"):
+                        depth -= 1
+                    continue
                 if "MUI_WELCOMEPAGE_TEXT" in l:
                     continue
                 out.append(l.replace('"${__FILEDIR__}\\', '"'))
@@ -221,6 +231,19 @@ def main() -> int:
             _print_line_diff(up_f, rn_f)
     else:
         check(True, f"upstream not present locally ({upstream}) — skipped")
+
+    print("\n[3b] Windows signing hook is inert unless CI defines SIGN_PS1")
+    try:
+        nsi = ri.render_nsi(manifests["polygraph"])
+        blk = nsi[nsi.index("!ifdef SIGN_PS1"):]
+        blk = blk[:blk.index("!endif\n!endif") + len("!endif\n!endif")] if "!endif\n!endif" in blk else blk
+        check("!finalize" in blk and "!uninstfinalize" in blk,
+              "installer and uninstaller signing hooks render inside !ifdef SIGN_PS1")
+        outside = nsi.replace(blk, "")
+        check("!finalize" not in outside and "!uninstfinalize" not in outside,
+              "no signing hook outside the SIGN_PS1 block")
+    except Exception as e:  # noqa: BLE001
+        check(False, f"signing hook render: {e}")
 
     print("\n[4] catalog build + schema validation")
     with tempfile.TemporaryDirectory() as tmp:

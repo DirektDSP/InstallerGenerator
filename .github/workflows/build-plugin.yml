@@ -29,6 +29,15 @@ on:
         required: false
         type: string
         default: validate
+      sign_windows:
+        # Authenticode-sign the Windows binaries and installer with SSL.com
+        # eSigner. Off by default: each signature costs one eSigner signing
+        # (Tier 1 = 240 a year), and the nightly build-all would spend them all.
+        # Release builds ask for it explicitly.
+        description: "sign the Windows binaries and installer (eSigner)"
+        required: false
+        type: boolean
+        default: false
     secrets:
       PAT: { required: true }
       PLUGIN_CONFIG_B64: { required: false }
@@ -46,6 +55,13 @@ on:
       MACOS_NOTARY_KEY_P8: { required: false }
       MACOS_NOTARY_KEY_ID: { required: false }
       MACOS_NOTARY_ISSUER_ID: { required: false }
+      # Windows Authenticode signing via SSL.com eSigner (cloud key). All four
+      # are needed together; ENVIRONMENT is optional ("TEST" = eSigner sandbox).
+      WINDOWS_ESIGNER_USERNAME: { required: false }
+      WINDOWS_ESIGNER_PASSWORD: { required: false }
+      WINDOWS_ESIGNER_CREDENTIAL_ID: { required: false }
+      WINDOWS_ESIGNER_TOTP_SECRET: { required: false }
+      WINDOWS_ESIGNER_ENVIRONMENT: { required: false }
   workflow_dispatch:
     inputs:
       plugin:
@@ -63,6 +79,11 @@ on:
         type: choice
         options: [build, validate, full]
         default: validate
+      sign_windows:
+        description: "sign the Windows binaries and installer (eSigner; uses signings)"
+        required: false
+        type: boolean
+        default: false
 
 env:
   BUILD_TYPE: Release
@@ -506,6 +527,114 @@ jobs:
             done
           done
           ls -laR ../_artifacts/windows/
+      # Windows Authenticode signing (SSL.com eSigner). Smart App Control on
+      # Windows 11 refuses to load unsigned DLLs it has no cloud reputation for
+      # (error 0xc0e90002), which blocks unsigned plugins in hosts. Runs only
+      # when the build asks for it (sign_windows) AND all four credentials are
+      # set; otherwise the binaries stay unsigned exactly as before.
+      - name: Set up Windows code signing
+        id: winsign
+        shell: pwsh
+        env:
+          ESIGNER_USERNAME: ${{ secrets.WINDOWS_ESIGNER_USERNAME }}
+          ESIGNER_PASSWORD: ${{ secrets.WINDOWS_ESIGNER_PASSWORD }}
+          ESIGNER_CREDENTIAL_ID: ${{ secrets.WINDOWS_ESIGNER_CREDENTIAL_ID }}
+          ESIGNER_TOTP_SECRET: ${{ secrets.WINDOWS_ESIGNER_TOTP_SECRET }}
+          ESIGNER_ENVIRONMENT: ${{ secrets.WINDOWS_ESIGNER_ENVIRONMENT }}
+          SIGN_REQUESTED: ${{ inputs.sign_windows }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $set = @($env:ESIGNER_USERNAME, $env:ESIGNER_PASSWORD, $env:ESIGNER_CREDENTIAL_ID, $env:ESIGNER_TOTP_SECRET) | Where-Object { $_ }
+          if ($env:SIGN_REQUESTED -ne 'true') {
+            Write-Host "sign_windows not requested: Windows binaries stay unsigned."
+            "enabled=false" >> $env:GITHUB_OUTPUT; exit 0
+          }
+          if ($set.Count -eq 0) {
+            Write-Host "::warning::sign_windows requested but no WINDOWS_ESIGNER_* secrets are set: shipping unsigned (Smart App Control will block the plugins)."
+            "enabled=false" >> $env:GITHUB_OUTPUT; exit 0
+          }
+          if ($set.Count -ne 4) {
+            Write-Error "Set all four of WINDOWS_ESIGNER_USERNAME, _PASSWORD, _CREDENTIAL_ID and _TOTP_SECRET."
+            exit 1
+          }
+
+          # CodeSignTool, pinned: the Windows zip bundles its own Java runtime.
+          $ver = "v1.3.2"
+          $sha = "4afc32e8b7f79bbe1de7e4e7049aaad4e0f754357613b9bbec0e3052f06fd36b"
+          $zip = Join-Path $env:RUNNER_TEMP "CodeSignTool-$ver-windows.zip"
+          Invoke-WebRequest -Uri "https://github.com/SSLcom/CodeSignTool/releases/download/$ver/CodeSignTool-$ver-windows.zip" -OutFile $zip
+          $got = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+          if ($got -ne $sha) { Write-Error "CodeSignTool checksum mismatch: $got"; exit 1 }
+          $tool = Join-Path $env:RUNNER_TEMP "codesigntool"
+          Expand-Archive -Path $zip -DestinationPath $tool -Force
+          Remove-Item $zip
+
+          if ($env:ESIGNER_ENVIRONMENT -eq "TEST") {
+            # eSigner sandbox (free demo account): proves the pipeline without
+            # spending real signings; the certificate is not publicly trusted.
+            @(
+              "CLIENT_ID=qOUeZCCzSqgA93acB3LYq6lBNjgZdiOxQc-KayC3UMw",
+              "OAUTH2_ENDPOINT=https://oauth-sandbox.ssl.com/oauth2/token",
+              "CSC_API_ENDPOINT=https://cs-try.ssl.com",
+              "TSA_URL=http://ts.ssl.com",
+              "TSA_LEGACY_URL=http://ts.ssl.com/legacy"
+            ) | Set-Content -Path (Join-Path $tool "conf\code_sign_tool.properties") -Encoding ascii
+            Write-Host "::warning::Windows signing uses the eSigner SANDBOX (TEST): signatures are not trusted by Windows."
+          }
+
+          # One signing entry point for this step and for NSIS's !finalize /
+          # !uninstfinalize hooks. Credentials come from the environment, never
+          # from the command line, so they cannot leak into makensis output.
+          $ps1 = Join-Path $env:RUNNER_TEMP "esigner-sign.ps1"
+          @'
+          param([Parameter(Mandatory = $true)][string]$Path)
+          $ErrorActionPreference = "Stop"
+          $tool = $env:ESIGNER_TOOL_DIR
+          $java = Join-Path $tool "jdk-11.0.2\bin\java.exe"
+          $jar = Join-Path $tool "jar\code_sign_tool-1.3.2.jar"
+          Push-Location $tool
+          try {
+            $env:CODE_SIGN_TOOL_PATH = $tool
+            $out = & $java -jar $jar sign "-username=$env:ESIGNER_USERNAME" "-password=$env:ESIGNER_PASSWORD" "-credential_id=$env:ESIGNER_CREDENTIAL_ID" "-totp_secret=$env:ESIGNER_TOTP_SECRET" "-input_file_path=$Path" "-override=true" 2>&1
+            $code = $LASTEXITCODE
+          } finally { Pop-Location }
+          $out | ForEach-Object { Write-Host $_ }
+          $sig = Get-AuthenticodeSignature -FilePath $Path
+          $ok = ($sig.Status -eq "Valid") -or ($env:ESIGNER_ENVIRONMENT -eq "TEST" -and $null -ne $sig.SignerCertificate)
+          if ($code -ne 0 -or -not $ok) {
+            Write-Host "::error::signing failed for $Path (exit $code, signature status $($sig.Status))"
+            exit 1
+          }
+          Write-Host "signed: $Path ($($sig.SignerCertificate.Subject))"
+          exit 0
+          '@ -replace '(?m)^          ', '' | Set-Content -Path $ps1 -Encoding utf8
+
+          "enabled=true" >> $env:GITHUB_OUTPUT
+          "tool_dir=$tool" >> $env:GITHUB_OUTPUT
+          "sign_ps1=$ps1" >> $env:GITHUB_OUTPUT
+      - name: Sign plugin binaries
+        if: steps.winsign.outputs.enabled == 'true'
+        shell: pwsh
+        env:
+          ESIGNER_USERNAME: ${{ secrets.WINDOWS_ESIGNER_USERNAME }}
+          ESIGNER_PASSWORD: ${{ secrets.WINDOWS_ESIGNER_PASSWORD }}
+          ESIGNER_CREDENTIAL_ID: ${{ secrets.WINDOWS_ESIGNER_CREDENTIAL_ID }}
+          ESIGNER_TOTP_SECRET: ${{ secrets.WINDOWS_ESIGNER_TOTP_SECRET }}
+          ESIGNER_ENVIRONMENT: ${{ secrets.WINDOWS_ESIGNER_ENVIRONMENT }}
+          ESIGNER_TOOL_DIR: ${{ steps.winsign.outputs.tool_dir }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          # Every PE file the installer ships: the VST3 binary inside the bundle,
+          # the .clap, the standalone .exe and any companion DLL. Files that
+          # already carry a valid signature (e.g. Microsoft's onnxruntime.dll)
+          # are left alone, which also saves signings.
+          $files = Get-ChildItem _artifacts\windows -Recurse -File | Where-Object { $_.Extension -in ".vst3", ".clap", ".exe", ".dll" }
+          foreach ($f in $files) {
+            $sig = Get-AuthenticodeSignature -FilePath $f.FullName
+            if ($sig.Status -eq "Valid") { Write-Host "already signed: $($f.Name) ($($sig.SignerCertificate.Subject))"; continue }
+            & pwsh -NoProfile -File "${{ steps.winsign.outputs.sign_ps1 }}" $f.FullName
+            if ($LASTEXITCODE -ne 0) { Write-Error "signing failed: $($f.FullName)"; exit 1 }
+          }
       - name: Upload raw plugin bundles (for validators)
         uses: actions/upload-artifact@v4
         with:
@@ -586,12 +715,22 @@ jobs:
           Add-Content -Path $env:GITHUB_PATH -Value $found
       - name: Build NSIS installer
         uses: joncloud/makensis-action@v4
+        env:
+          # Read by the !finalize / !uninstfinalize signing hook (only defined
+          # when signing is enabled; see SIGN_PS1 in installer.nsi.in).
+          ESIGNER_USERNAME: ${{ secrets.WINDOWS_ESIGNER_USERNAME }}
+          ESIGNER_PASSWORD: ${{ secrets.WINDOWS_ESIGNER_PASSWORD }}
+          ESIGNER_CREDENTIAL_ID: ${{ secrets.WINDOWS_ESIGNER_CREDENTIAL_ID }}
+          ESIGNER_TOTP_SECRET: ${{ secrets.WINDOWS_ESIGNER_TOTP_SECRET }}
+          ESIGNER_ENVIRONMENT: ${{ secrets.WINDOWS_ESIGNER_ENVIRONMENT }}
+          ESIGNER_TOOL_DIR: ${{ steps.winsign.outputs.tool_dir }}
         with:
           script-file: ${{ needs.manifest.outputs.repo_name }}/packaging/installer.nsi
           arguments: >-
             /DVERSION=${{ steps.version.outputs.version }}
             /DARTIFACTS_DIR=${{ github.workspace }}\_artifacts\windows
             /DOUTDIR=${{ github.workspace }}\_artifacts
+            ${{ steps.winsign.outputs.enabled == 'true' && format('/DSIGN_PS1={0}', steps.winsign.outputs.sign_ps1) || '' }}
       - name: Smoke test + checksum
         shell: pwsh
         run: |
@@ -601,6 +740,26 @@ jobs:
           if ($p.ExitCode -ne 0) { Write-Error "installer exit $($p.ExitCode)"; exit 1 }
           $vst3 = Join-Path $env:CommonProgramFiles "VST3\${{ needs.manifest.outputs.company_name }}\${{ needs.manifest.outputs.product_name }}.vst3"
           if (-not (Test-Path $vst3)) { Write-Error "VST3 not installed at $vst3"; exit 1 }
+          # With signing on, everything Windows will load or run must carry a
+          # signature: the installer, the uninstaller it wrote, and every PE
+          # file it installed. A silently unsigned release is what this guards.
+          $signing = "${{ steps.winsign.outputs.enabled }}" -eq "true"
+          $sandbox = "${{ secrets.WINDOWS_ESIGNER_ENVIRONMENT }}" -eq "TEST"
+          $check = @($exe.FullName)
+          $check += Get-ChildItem $vst3 -Recurse -File | Where-Object { $_.Extension -in ".vst3", ".dll" } | ForEach-Object FullName
+          $uninst = Get-ChildItem (Join-Path $env:ProgramFiles "${{ needs.manifest.outputs.company_name }}") -Recurse -Filter "Uninstall-*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($uninst) { $check += $uninst.FullName }
+          $clapDir = Join-Path $env:CommonProgramFiles "CLAP\${{ needs.manifest.outputs.company_name }}"
+          if (Test-Path $clapDir) { $check += Get-ChildItem $clapDir -File | Where-Object { $_.Extension -in ".clap", ".dll" } | ForEach-Object FullName }
+          $bad = 0
+          foreach ($f in $check) {
+            $sig = Get-AuthenticodeSignature -FilePath $f
+            $ok = ($sig.Status -eq "Valid") -or ($sandbox -and $null -ne $sig.SignerCertificate)
+            Write-Host ("{0,-14} {1}  {2}" -f $sig.Status, (Split-Path $f -Leaf), $sig.SignerCertificate.Subject)
+            if ($signing -and -not $ok) { $bad++ }
+          }
+          if ($signing -and $bad -gt 0) { Write-Error "$bad shipped file(s) are not signed"; exit 1 }
+          if (-not $signing) { Write-Host "::warning::Windows binaries are unsigned: Smart App Control on Windows 11 will refuse to load the plugins." }
           (Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLower() + "  " + $exe.Name | Out-File "$($exe.FullName).sha256" -Encoding ascii
       - uses: actions/upload-artifact@v4
         with:
