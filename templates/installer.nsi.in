@@ -152,8 +152,14 @@ SectionEnd
 ;----------------------------------------------------------------------
 
 Section "User Manual (PDF)" SecManual
+  ; Beside the Standalone in the install folder...
   SetOutPath "$INSTDIR"
-  File /nonfatal "${ARTIFACTS_DIR}\@PRODUCT_NAME_LOWER@-manual.pdf"
+  File /nonfatal "/oname=@PRODUCT_NAME@ User Manual.pdf" "${ARTIFACTS_DIR}\@PRODUCT_NAME_LOWER@-manual.pdf"
+  ; ...and beside the plugin's presets in the user's Documents. Left in place on
+  ; uninstall, like the presets.
+  SetOutPath "$DOCUMENTS\@COMPANY_NAME@\@PRODUCT_NAME@"
+  File /nonfatal "/oname=@PRODUCT_NAME@ User Manual.pdf" "${ARTIFACTS_DIR}\@PRODUCT_NAME_LOWER@-manual.pdf"
+  SetOutPath "$INSTDIR"
 SectionEnd
 
 ;----------------------------------------------------------------------
@@ -195,7 +201,7 @@ SectionEnd
 ;@IF PRESETS
   !insertmacro MUI_DESCRIPTION_TEXT ${SecPresets} "@PRODUCT_NAME@ factory preset library."
 ;@ENDIF
-  !insertmacro MUI_DESCRIPTION_TEXT ${SecManual} "@PRODUCT_NAME@ user manual (PDF)."
+  !insertmacro MUI_DESCRIPTION_TEXT ${SecManual} "@PRODUCT_NAME@ user manual (PDF), in the install folder and in Documents\@COMPANY_NAME@\@PRODUCT_NAME@ beside your presets."
 !insertmacro MUI_FUNCTION_DESCRIPTION_END
 
 ;----------------------------------------------------------------------
@@ -226,7 +232,8 @@ Section "Uninstall"
   Delete "$INSTDIR\@PRODUCT_NAME@.exe"
   ;@RUNTIME remove standalone "$INSTDIR"
 ;@ENDIF
-  Delete "$INSTDIR\@PRODUCT_NAME_LOWER@-manual.pdf"
+  Delete "$INSTDIR\@PRODUCT_NAME@ User Manual.pdf"
+  Delete "$INSTDIR\@PRODUCT_NAME_LOWER@-manual.pdf" ; name used before 2026-11
   Delete "$INSTDIR\Uninstall-@PRODUCT_NAME@.exe"
   RMDir "$INSTDIR"
   RMDir "$PROGRAMFILES64\@COMPANY_NAME@"
