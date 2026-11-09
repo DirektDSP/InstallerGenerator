@@ -777,7 +777,7 @@ jobs:
     if: >-
       always() && needs.manifest.result == 'success' &&
       needs.lint.result != 'cancelled'
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
         with: { path: _generator }
@@ -1085,7 +1085,7 @@ jobs:
     if: >-
       always() && contains(fromJSON('["validate","full"]'), needs.manifest.outputs.level) &&
       needs.build-macos.result == 'success'
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
         with: { path: _generator }
@@ -1199,7 +1199,7 @@ jobs:
     if: >-
       always() && contains(fromJSON('["validate","full"]'), needs.manifest.outputs.level) &&
       needs.build-macos.result == 'success'
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
         with: { path: _generator }
