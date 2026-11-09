@@ -2,9 +2,13 @@ schema_version = "1"
 
 [repo]
 name = "Polygraph"
-# Pinned to the released tag — see churn.toml. Bump this when you tag.
+# Pinned to the commit 1.0.0 ships from (Polygraph master, 2026-11-09): the
+# v1.0.0 tag (2026-10-20) predates the Logic MIDI input, the double-trigger
+# and re-pluck fixes and the final manual, and was never sold. Go back to a
+# tag ref ("vX.Y.Z") with the next tagged release; a v* ref also makes every
+# level build the manual.
 # 1.0.0 is the first public release (1.1.x tags were removed on 2026-10-20).
-ref  = "v1.0.0"
+ref  = "402d162ddd6dfb3a2e1387ae85482829157d097b"
 
 [identity]
 product_name = "Polygraph"
